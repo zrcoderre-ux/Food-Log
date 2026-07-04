@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v2-2026-07-04';
+const VERSION = 'plateiq-v3-2026-07-04';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -20,6 +20,8 @@ const BYPASS_HOSTS = [
   'world.openfoodfacts.org',
   'accounts.google.com',
   'www.googleapis.com',
+  'supabase.co',
+  'supabase.in',
 ];
 
 self.addEventListener('install', (event) => {

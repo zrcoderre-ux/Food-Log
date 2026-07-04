@@ -48,6 +48,53 @@ Because there's no backend, you connect Fitbit with your own free developer app:
 3. Copy the app's **OAuth 2.0 Client ID** into Settings → Fitbit → Client ID,
    then tap **Connect Fitbit**.
 
+## Cloud sync & zero-touch step import (Supabase)
+
+Optional. Enables **cross-device sync** of your diary/settings and **zero-touch
+Apple Health step import** — all on Supabase's free tier. Everything stays in
+your own project; the app only ever holds your project's *public* keys.
+
+### 1. Create the project & tables
+
+1. Create a free project at <https://supabase.com>.
+2. Open **SQL Editor → New query**, paste the entire contents of
+   [`supabase-schema.sql`](./supabase-schema.sql), and **Run**. This creates the
+   sync/steps tables, row-level-security policies, and the `ingest_steps()`
+   function used for zero-touch import. (Safe to re-run.)
+3. In **Authentication → URL Configuration**, add your deployed app URL
+   (e.g. `https://zrcoderre-ux.github.io/Food-Log/`) to **Site URL** and
+   **Redirect URLs** so the magic-link sign-in can return to the app.
+
+### 2. Connect the app
+
+1. In **Project Settings → API**, copy the **Project URL** and the **anon
+   public** key.
+2. In PlateIQ → Settings → **Cloud sync**, paste both, enter your email, and tap
+   **Send sign-in link**. Click the link in your email — you're signed in, and
+   your data syncs automatically from then on. Repeat on any other device to
+   share the same data.
+
+### 3. Zero-touch Apple Health steps (iOS Shortcut)
+
+Your iPhone already counts steps 24/7 in Apple Health. This pushes that number
+to PlateIQ in the background — no tapping. In Settings → Cloud sync, tap **Copy
+ingest details** to get your `Endpoint`, `Token`, and `apikey`, then:
+
+1. In the **Shortcuts** app, create a shortcut:
+   - **Find Health Samples** → Steps → filter to **Today**, and **Calculate
+     Statistics → Sum** to get today's total.
+   - **Get Contents of URL** → your `Endpoint`, Method **POST**,
+     Headers: `apikey` = your anon key, `Content-Type` = `application/json`,
+     Request Body (JSON):
+     `{ "p_token": "<your token>", "p_day": "<today as YYYY-MM-DD>", "p_steps": <the sum>, "p_source": "apple_health" }`
+2. In the **Automation** tab, add a **Time of Day** automation (e.g. hourly or at
+   day's end), set it to **Run Immediately** with notifications off, and run the
+   shortcut above. iOS runs it silently in the background.
+
+PlateIQ pulls these steps on each sync and reconciles them with Fitbit: Fitbit
+stays primary, and Apple Health only fills in steps/calories the watch missed —
+so nothing is ever double-counted.
+
 ## Files
 
 | File | Purpose |
@@ -55,4 +102,5 @@ Because there's no backend, you connect Fitbit with your own free developer app:
 | `index.html` | The entire app (UI, styles, logic) |
 | `manifest.webmanifest` | PWA metadata |
 | `sw.js` | Service worker (offline app shell) |
+| `supabase-schema.sql` | One-time SQL for cloud sync + step ingestion |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |

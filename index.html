@@ -947,6 +947,25 @@ body {
 .steps-legend { display: flex; gap: 14px; font-size: 10px; color: var(--text3); justify-content: center; margin-top: 8px; }
 .steps-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 .steps-empty { text-align: center; color: var(--text3); font-size: 12px; padding: 20px 0; }
+
+/* ═══════════════ NUTRIENTS ═══════════════ */
+.nr-tier-head { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 9px; }
+.nr-tier-head:first-child { margin-top: 0; }
+.nr-tier-head span { color: var(--text3); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.nutrient-row { margin-bottom: 10px; }
+.nr-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.nr-name { color: var(--text); }
+.nr-val { color: var(--text3); font-variant-numeric: tabular-nums; }
+.nr-bar { height: 6px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+.nr-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+.rec-nutri-head { font-size: 12px; font-weight: 600; color: var(--text); margin: 18px 2px 8px; }
+.rec-nutri { margin-bottom: 12px; }
+.rn-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.rn-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.rn-pct { font-size: 11px; font-variant-numeric: tabular-nums; }
+.nutri-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.nutri-chip { font-size: 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; color: var(--text2); cursor: pointer; }
+.nutri-chip:active { background: var(--accent-light); }
 </style>
 </head>
 <body>
@@ -1225,6 +1244,11 @@ body {
         <span><i style="background:var(--fat)"></i>Apple Health</span>
         <span><i style="background:var(--carb)"></i>Phone</span>
       </div>
+    </div>
+    <div class="steps-card" id="nutrient-card">
+      <div class="steps-title">Vitamins &amp; minerals</div>
+      <div class="steps-sub">Each nutrient is measured over its natural window — daily, a few days, or a week.</div>
+      <div id="nutrient-list" style="margin-top:12px;"></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
       <div class="foods-tabs" style="flex:1;margin:0;">
@@ -3809,7 +3833,7 @@ function usdaToFood(item) {
   const protein = getN('203'), fat = getN('204'), carbs = getN('205');
   const brand = (item.brandOwner || item.brandName || '').trim();
   const id = 'usda' + item.fdcId;
-  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda' };
+  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda', micros: usdaMicros(arr) };
 }
 async function usdaSearch(q) {
   if (!(state.usda && state.usda.apiKey)) return [];
@@ -3844,7 +3868,7 @@ function logOff(id) {
   const f = offCache[id]; if (!f) return;
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: f.micros || null, defaultQty: 1 });
 }
 function saveUsdaKey() {
   ensureDataModel();
@@ -3870,7 +3894,7 @@ function renderLogRecipes() {
 }
 function logFood(id) {
   const f = getFood(id); if (!f) return;
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: f.micros || null, defaultQty: 1 });
 }
 function logMeal(i) {
   const m = state.savedMeals[i]; if (!m) return;
@@ -3916,7 +3940,8 @@ function confirmLog() {
     id: 'e' + Date.now() + Math.round(Math.random() * 9999),
     kind: p.kind, refId: p.refId || null, name: p.name, emoji: p.emoji || '🍽️',
     slot, qty, serving: p.serving || '',
-    kcal: p.kcal, protein: p.protein, carbs: p.carbs, fat: p.fat
+    kcal: p.kcal, protein: p.protein, carbs: p.carbs, fat: p.fat,
+    micros: p.micros || null
   });
   saveState();
   closeModal('qty-modal'); closeModal('log-food-modal'); closeModal('recommend-modal');
@@ -4525,6 +4550,109 @@ function renderSyncSettings() {
   }
 }
 
+// ── Micronutrients (vitamins & minerals) ─────────────────────────────────────
+// Each nutrient is tracked over a window sized to how the body stores it:
+//   window 1 = replenish ~daily (water-soluble vitamins, not stored)
+//   window 3 = average over a few days (minerals with modest reserves)
+//   window 7 = average over a week (fat-soluble vitamins, B12, iron — big stores)
+// Targets are FDA Daily Values; `usda` is the FoodData Central nutrientNumber.
+const NUTRIENTS = [
+  { key: 'vitc', label: 'Vitamin C', unit: 'mg', dv: 90, window: 1, tier: 'daily', usda: '401' },
+  { key: 'b1', label: 'Thiamin (B1)', unit: 'mg', dv: 1.2, window: 1, tier: 'daily', usda: '404' },
+  { key: 'b2', label: 'Riboflavin (B2)', unit: 'mg', dv: 1.3, window: 1, tier: 'daily', usda: '405' },
+  { key: 'b3', label: 'Niacin (B3)', unit: 'mg', dv: 16, window: 1, tier: 'daily', usda: '406' },
+  { key: 'b6', label: 'Vitamin B6', unit: 'mg', dv: 1.7, window: 1, tier: 'daily', usda: '415' },
+  { key: 'folate', label: 'Folate', unit: 'mcg', dv: 400, window: 1, tier: 'daily', usda: '435' },
+  { key: 'b5', label: 'Pantothenate (B5)', unit: 'mg', dv: 5, window: 1, tier: 'daily', usda: '410' },
+  { key: 'calcium', label: 'Calcium', unit: 'mg', dv: 1300, window: 3, tier: 'few', usda: '301' },
+  { key: 'magnesium', label: 'Magnesium', unit: 'mg', dv: 420, window: 3, tier: 'few', usda: '304' },
+  { key: 'zinc', label: 'Zinc', unit: 'mg', dv: 11, window: 3, tier: 'few', usda: '309' },
+  { key: 'potassium', label: 'Potassium', unit: 'mg', dv: 4700, window: 3, tier: 'few', usda: '306' },
+  { key: 'fiber', label: 'Fiber', unit: 'g', dv: 28, window: 3, tier: 'few', usda: '291' },
+  { key: 'vita', label: 'Vitamin A', unit: 'mcg', dv: 900, window: 7, tier: 'week', usda: '320' },
+  { key: 'vitd', label: 'Vitamin D', unit: 'mcg', dv: 20, window: 7, tier: 'week', usda: '328' },
+  { key: 'vite', label: 'Vitamin E', unit: 'mg', dv: 15, window: 7, tier: 'week', usda: '323' },
+  { key: 'vitk', label: 'Vitamin K', unit: 'mcg', dv: 120, window: 7, tier: 'week', usda: '430' },
+  { key: 'b12', label: 'Vitamin B12', unit: 'mcg', dv: 2.4, window: 7, tier: 'week', usda: '418' },
+  { key: 'iron', label: 'Iron', unit: 'mg', dv: 18, window: 7, tier: 'week', usda: '303' },
+  { key: 'selenium', label: 'Selenium', unit: 'mcg', dv: 55, window: 7, tier: 'week', usda: '317' },
+];
+const TIER_LABEL = { daily: 'Daily', few: 'Every few days', week: 'Weekly' };
+const NUTRIENT_SOURCES = {
+  vitc: ['Orange', 'Red bell pepper', 'Strawberries', 'Broccoli', 'Kiwi'],
+  b1: ['Pork', 'Black beans', 'Sunflower seeds', 'Whole grains'],
+  b2: ['Eggs', 'Milk', 'Almonds', 'Mushrooms'],
+  b3: ['Chicken breast', 'Tuna', 'Peanuts', 'Brown rice'],
+  b6: ['Chickpeas', 'Salmon', 'Potato', 'Banana'],
+  folate: ['Lentils', 'Spinach', 'Asparagus', 'Avocado'],
+  b5: ['Chicken', 'Avocado', 'Mushrooms', 'Sweet potato'],
+  calcium: ['Yogurt', 'Milk', 'Cheese', 'Tofu', 'Sardines'],
+  magnesium: ['Almonds', 'Spinach', 'Black beans', 'Pumpkin seeds'],
+  zinc: ['Beef', 'Pumpkin seeds', 'Chickpeas', 'Cashews'],
+  potassium: ['Banana', 'Potato', 'White beans', 'Spinach', 'Avocado'],
+  fiber: ['Black beans', 'Oats', 'Raspberries', 'Lentils', 'Whole grains'],
+  vita: ['Sweet potato', 'Carrots', 'Spinach', 'Beef liver'],
+  vitd: ['Salmon', 'Sardines', 'Egg yolk', 'Fortified milk'],
+  vite: ['Almonds', 'Sunflower seeds', 'Spinach', 'Avocado'],
+  vitk: ['Kale', 'Spinach', 'Broccoli', 'Brussels sprouts'],
+  b12: ['Beef', 'Salmon', 'Eggs', 'Dairy', 'Fortified nutritional yeast'],
+  iron: ['Beef', 'Lentils', 'Spinach', 'Tofu', 'Fortified cereal'],
+  selenium: ['Brazil nuts', 'Tuna', 'Eggs', 'Sunflower seeds'],
+};
+function usdaMicros(arr) {
+  const m = {};
+  NUTRIENTS.forEach(nt => {
+    const n = arr.find(x => String(x.nutrientNumber) === nt.usda);
+    const v = n ? num(n.value) : 0;
+    if (v) m[nt.key] = v;
+  });
+  return m;
+}
+function nutrientTotal(nt, endDate) {
+  let total = 0;
+  for (let i = 0; i < nt.window; i++) {
+    const d = new Date(endDate); d.setDate(d.getDate() - i);
+    const day = state.diary[dkey(d)];
+    if (!day) continue;
+    day.entries.forEach(e => { if (e.micros && e.micros[nt.key] != null) total += e.micros[nt.key] * e.qty; });
+  }
+  return total;
+}
+function nutrientStatus(endDate) {
+  endDate = endDate || new Date();
+  return NUTRIENTS.map(nt => {
+    const have = nutrientTotal(nt, endDate);
+    const need = nt.dv * nt.window;
+    return { nt, have, need, pct: need ? have / need : 0 };
+  });
+}
+function hasMicroData(status) { return status.some(s => s.have > 0); }
+function nutrientColor(pct) { return pct >= 1 ? 'var(--accent)' : pct >= 0.5 ? 'var(--fat)' : 'var(--warn)'; }
+function fmtAmt(v, unit) { return (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10) + ' ' + unit; }
+
+function renderNutrients() {
+  const list = document.getElementById('nutrient-list'); if (!list) return;
+  const status = nutrientStatus(new Date());
+  if (!hasMicroData(status)) {
+    list.innerHTML = '<div class="rec-empty" style="padding:18px 8px;">No micronutrient data yet.<br>Log foods via <b>USDA search</b> (Settings → Food database) to track vitamins & minerals here — each is measured over its natural window.</div>';
+    return;
+  }
+  const byTier = { daily: [], few: [], week: [] };
+  status.forEach(s => byTier[s.nt.tier].push(s));
+  list.innerHTML = ['daily', 'few', 'week'].map(tier => {
+    const rows = byTier[tier].map(s => {
+      const pct = Math.min(100, Math.round(s.pct * 100));
+      return `<div class="nutrient-row">
+        <div class="nr-top"><span class="nr-name">${s.nt.label}</span>
+          <span class="nr-val">${fmtAmt(s.have, s.nt.unit)} / ${fmtAmt(s.need, s.nt.unit)}</span></div>
+        <div class="nr-bar"><div class="nr-fill" style="width:${pct}%;background:${nutrientColor(s.pct)};"></div></div>
+      </div>`;
+    }).join('');
+    const win = tier === 'daily' ? 'today' : tier === 'few' ? 'last 3 days' : 'last 7 days';
+    return `<div class="nr-tier-head">${TIER_LABEL[tier]} <span>· ${win}</span></div>${rows}`;
+  }).join('');
+}
+
 // ── Recommendations ──────────────────────────────────────────────────────────
 function openRecommend() {
   logTargetSlot = defaultSlot();
@@ -4553,14 +4681,35 @@ function openRecommend() {
     return { f, score };
   }).sort((a, b) => b.score - a.score).slice(0, 8);
 
-  list.innerHTML = scored.map(({ f }) => `<div class="rec-item" onclick="logFood('${f.id}')">
+  list.innerHTML = (scored.map(({ f }) => `<div class="rec-item" onclick="logFood('${f.id}')">
       <span class="ri-emoji">${f.emoji || '🍽️'}</span>
       <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
         <div class="ri-why">${recWhy(f, wP, wC, wF)}</div>
         <div class="ri-macros">${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
       <span class="ri-add">＋</span></div>`).join('')
-    || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>';
+    || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>')
+    + micronutrientRecsHtml();
   openModalById('recommend-modal');
+}
+function micronutrientRecsHtml() {
+  const status = nutrientStatus(new Date());
+  if (!hasMicroData(status)) return '';
+  const gaps = status.filter(s => s.pct < 0.7).sort((a, b) => a.pct - b.pct).slice(0, 4);
+  if (!gaps.length) return '<div class="rec-nutri-head">Vitamins & minerals</div><div class="rec-empty" style="padding:10px;">You’re on track with your tracked nutrients too. 💪</div>';
+  return '<div class="rec-nutri-head">You’re running low on</div>' + gaps.map(s => {
+    const src = (NUTRIENT_SOURCES[s.nt.key] || []).slice(0, 4);
+    const chips = src.map(name => `<span class="nutri-chip" onclick="suggestSearch('${name.replace(/'/g, "\\'")}')">${escapeHtml(name)}</span>`).join('');
+    return `<div class="rec-nutri">
+      <div class="rn-top"><span class="rn-name">${s.nt.label}</span><span class="rn-pct" style="color:${nutrientColor(s.pct)};">${Math.round(s.pct * 100)}% of ${TIER_LABEL[s.nt.tier].toLowerCase()} target</span></div>
+      <div class="nutri-chips">${chips}</div>
+    </div>`;
+  }).join('');
+}
+function suggestSearch(name) {
+  closeModal('recommend-modal');
+  openLogModal(defaultSlot());
+  const inp = document.getElementById('log-search-input');
+  if (inp) { inp.value = name; renderLogSearch(); }
 }
 function recWhy(f, wP, wC, wF) {
   const c = [['protein', f.protein * wP, `${f.protein}g protein`], ['carbs', f.carbs * wC, `${f.carbs}g carbs`], ['fat', f.fat * wF, `${f.fat}g fat`]].sort((a, b) => b[1] - a[1]);
@@ -4590,7 +4739,7 @@ overlayClick = function (e, id) {
 const _origOpenSettings = openSettings;
 openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); };
 const _origRenderHistory = renderHistory;
-renderHistory = function () { _origRenderHistory(); renderStepsChart(); };
+renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); };
 
 // Every local save also schedules a debounced push to the cloud (when signed in).
 const _origSaveState = saveState;

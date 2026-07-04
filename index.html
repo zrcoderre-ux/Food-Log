@@ -975,6 +975,11 @@ body {
 .energy-btn:active { background: var(--accent-light); }
 .energy-btn .eb-ic { font-size: 22px; }
 .energy-skip { text-align: center; font-size: 12px; color: var(--text3); margin-top: 10px; cursor: pointer; }
+.insight-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text); line-height: 1.5; padding: 9px 0; border-bottom: 1px solid var(--surface2); }
+.insight-row:last-child { border-bottom: none; }
+.insight-row .in-emoji { font-size: 18px; flex-shrink: 0; }
+.in-strength { color: var(--text3); font-size: 11px; }
+.in-note { font-size: 11px; color: var(--text3); margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -1275,6 +1280,11 @@ body {
       <div class="steps-sub">Average energy (Low · Medium · High) over the last 7 days.</div>
       <div id="energy-list" style="margin-top:6px;"></div>
     </div>
+    <div class="steps-card" id="insight-card">
+      <div class="steps-title">Energy insights</div>
+      <div class="steps-sub">How your energy relates to what you eat and how much you move.</div>
+      <div id="insight-list" style="margin-top:8px;"></div>
+    </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
       <div class="foods-tabs" style="flex:1;margin:0;">
         <div class="foods-tab active" onclick="historyView('nutrition',this)">Nutrition</div>
@@ -1473,7 +1483,11 @@ body {
       <button class="btn-primary" id="energy-enable-btn" style="margin-bottom:10px;" onclick="toggleEnergy()">Turn on check-ins</button>
       <div class="settings-row"><label>Waking hours</label><span><input type="number" id="energy-wake-start" min="0" max="23" style="width:52px;" onchange="saveEnergyCfg()"> – <input type="number" id="energy-wake-end" min="1" max="24" style="width:52px;" onchange="saveEnergyCfg()"></span></div>
       <button class="btn-secondary" id="energy-notify-btn" style="margin-top:10px;" onclick="enableEnergyNotify()">Enable notifications</button>
-      <p style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;">Notifications fire while the app is open or recently active. Reminders when the app is fully closed need push notifications (a Supabase add-on — ask to enable).</p>
+      <div class="settings-label" style="margin-top:16px;">Background reminders (push)</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Get reminders even when the app is fully closed, sent on your adaptive schedule. Requires Cloud sync (signed in) plus a one-time Supabase push setup — see the README.</p>
+      <button class="btn-primary" id="energy-push-btn" onclick="toggleEnergyPush()">Enable background reminders</button>
+      <div class="settings-row" style="margin-top:10px;"><label>VAPID key</label><input type="text" id="energy-vapid" placeholder="(default provided)" style="width:150px;" onchange="saveVapid()"></div>
+      <div id="energy-push-status" style="font-size:11px;color:var(--text3);margin-top:6px;"></div>
     </div>
 
     <div class="settings-section">
@@ -3689,6 +3703,8 @@ function ensureDataModel() {
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
   if (!state.energy) state.energy = { enabled: true, notify: false, wakeStart: 8, wakeEnd: 22, logs: [], lastPromptT: 0 };
+  if (state.energy.pushOn === undefined) state.energy.pushOn = false;
+  if (state.energy.vapidPublic === undefined) state.energy.vapidPublic = '';
 }
 function dkey(d) {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -4623,6 +4639,7 @@ function logEnergy(level) {
   state.energy.logs.push({ t: Date.now(), level });
   state.energy.lastPromptT = Date.now();
   saveState();
+  updatePushConfig(); // cadence may have changed as data grows
   const card = document.getElementById('energy-card'); if (card) card.dataset.forced = '0';
   renderEnergyCard(); renderEnergyHistory(); renderEnergySettings();
   toast('Energy logged: ' + ENERGY_LEVELS[level].label);
@@ -4688,7 +4705,14 @@ function renderEnergySettings() {
   val('energy-wake-end', state.energy.wakeEnd);
   const nb = document.getElementById('energy-notify-btn');
   if (nb) nb.textContent = ('Notification' in window && Notification.permission === 'granted' && state.energy.notify) ? 'Notifications on ✓' : 'Enable notifications';
+  const pb = document.getElementById('energy-push-btn');
+  if (pb) pb.textContent = state.energy.pushOn ? 'Turn off background reminders' : 'Enable background reminders';
+  const vp = document.getElementById('energy-vapid'); if (vp && state.energy.vapidPublic) vp.value = state.energy.vapidPublic;
+  const ps = document.getElementById('energy-push-status');
+  if (ps) ps.textContent = state.energy.pushOn ? 'Active — reminders arrive on your ~' + energyTargetPerDay() + '×/day schedule.' : (sbAuthed() ? '' : 'Sign in to Cloud sync to enable.');
 }
+function toggleEnergyPush() { ensureDataModel(); state.energy.pushOn ? unsubscribeEnergyPush() : subscribeEnergyPush(); }
+function saveVapid() { ensureDataModel(); state.energy.vapidPublic = (document.getElementById('energy-vapid').value || '').trim(); saveState(); }
 function renderEnergyHistory() {
   const el = document.getElementById('energy-list'); if (!el) return;
   const logs = state.energy.logs || [];
@@ -4716,6 +4740,135 @@ function handleEnergyHash() {
   history.replaceState(null, '', location.pathname + location.search);
   if (ENERGY_LEVELS[lvl]) logEnergy(lvl); else openEnergyPrompt();
   return true;
+}
+
+// ── Web Push (closed-app energy reminders, via Supabase) ─────────────────────
+const DEFAULT_VAPID_PUBLIC = 'BMcYU_XYg6fCZVBNaSbzM_P7UEIvEWldDaViB7TNOCoDQtv5NkDt0qMCfHlxOQsZRxiUD_PuhYjP83mySomHxaQ';
+function vapidPublic() { ensureDataModel(); return (state.energy.vapidPublic || DEFAULT_VAPID_PUBLIC).trim(); }
+function urlBase64ToUint8Array(base64) {
+  const pad = '='.repeat((4 - base64.length % 4) % 4);
+  const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+function pushConfigBody() {
+  return {
+    user_id: state.sync.userId,
+    target_per_day: energyTargetPerDay(),
+    wake_start: state.energy.wakeStart,
+    wake_end: state.energy.wakeEnd,
+    tz: (Intl.DateTimeFormat().resolvedOptions().timeZone) || 'UTC',
+    updated_at: new Date().toISOString()
+  };
+}
+async function subscribeEnergyPush() {
+  ensureDataModel();
+  if (!sbAuthed()) { toast('Turn on Cloud sync (sign in) first'); return; }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) { toast('Push isn’t supported on this browser'); return; }
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Notification permission denied'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic()) });
+    const body = { ...pushConfigBody(), subscription: sub.toJSON() };
+    const r = await sbAuthedFetch('/rest/v1/plateiq_push?on_conflict=user_id', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body)
+    });
+    if (r.ok) { state.energy.pushOn = true; state.energy.notify = true; saveState(); renderEnergySettings(); toast('Background reminders on 🔔'); }
+    else { toast('Couldn’t save push subscription (run the SQL setup?)'); }
+  } catch (e) { toast('Push setup failed: ' + (e.message || e)); }
+}
+async function unsubscribeEnergyPush() {
+  ensureDataModel();
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+    if (sbAuthed()) await sbAuthedFetch('/rest/v1/plateiq_push?user_id=eq.' + state.sync.userId, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  } catch (e) {}
+  state.energy.pushOn = false; saveState(); renderEnergySettings(); toast('Background reminders off');
+}
+// Keep the server's copy of cadence/waking/tz current when push is on.
+async function updatePushConfig() {
+  if (!state.energy.pushOn || !sbAuthed()) return;
+  try {
+    await sbAuthedFetch('/rest/v1/plateiq_push?user_id=eq.' + state.sync.userId, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(pushConfigBody())
+    });
+  } catch (e) {}
+}
+
+// ── Energy insights (correlate energy with food, macros & steps) ─────────────
+function dayEnergyAvg(key) {
+  const logs = (state.energy.logs || []).filter(l => dkey(new Date(l.t)) === key);
+  if (!logs.length) return null;
+  const v = { low: 1, medium: 2, high: 3 };
+  return logs.reduce((s, l) => s + v[l.level], 0) / logs.length;
+}
+function dayMicroTotal(key, nutKey) {
+  const d = state.diary[key]; if (!d) return 0;
+  let t = 0; d.entries.forEach(e => { if (e.micros && e.micros[nutKey] != null) t += e.micros[nutKey] * e.qty; });
+  return t;
+}
+function buildEnergyDataset() {
+  const rows = []; const today = new Date();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const key = dkey(d);
+    const e = dayEnergyAvg(key);
+    if (e == null) continue;
+    const tot = diaryTotals(key);
+    rows.push({ energy: e, steps: reconciledSteps(key), kcal: tot.kcal, protein: tot.protein, carbs: tot.carbs, fat: tot.fat,
+      fiber: dayMicroTotal(key, 'fiber'), iron: dayMicroTotal(key, 'iron'), magnesium: dayMicroTotal(key, 'magnesium') });
+  }
+  return rows;
+}
+function pearson(xs, ys) {
+  const n = xs.length; if (n < 3) return null;
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+  if (sxx === 0 || syy === 0) return null;
+  return sxy / Math.sqrt(sxx * syy);
+}
+const INSIGHT_VARS = [
+  { key: 'steps', hi: 'more steps', lo: 'fewer steps' },
+  { key: 'protein', hi: 'more protein', lo: 'less protein' },
+  { key: 'carbs', hi: 'more carbs', lo: 'fewer carbs' },
+  { key: 'fat', hi: 'more fat', lo: 'less fat' },
+  { key: 'kcal', hi: 'eating more', lo: 'eating less' },
+  { key: 'fiber', hi: 'more fiber', lo: 'less fiber' },
+  { key: 'iron', hi: 'more iron', lo: 'less iron' },
+  { key: 'magnesium', hi: 'more magnesium', lo: 'less magnesium' },
+];
+function energyInsights() {
+  const rows = buildEnergyDataset();
+  if (rows.length < 6) return { enough: false, days: rows.length };
+  const energy = rows.map(r => r.energy);
+  const out = [];
+  INSIGHT_VARS.forEach(v => {
+    const xs = rows.map(r => r[v.key]);
+    if (xs.every(x => x === 0)) return;
+    const r = pearson(xs, energy);
+    if (r != null && Math.abs(r) >= 0.3) out.push({ v, r });
+  });
+  out.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  return { enough: true, days: rows.length, insights: out.slice(0, 3) };
+}
+function strengthWord(r) { const a = Math.abs(r); return a >= 0.6 ? 'strong' : a >= 0.45 ? 'moderate' : 'slight'; }
+function renderEnergyInsights() {
+  const el = document.getElementById('insight-list'); if (!el) return;
+  const res = energyInsights();
+  if (!res.enough) { el.innerHTML = `<div class="rec-empty" style="padding:14px 8px;">Keep logging — insights appear after about a week of check-ins (${res.days}/6 days so far).</div>`; return; }
+  if (!res.insights.length) { el.innerHTML = '<div class="rec-empty" style="padding:14px 8px;">No strong patterns yet across your food, macros, and steps — more data will sharpen this.</div>'; return; }
+  el.innerHTML = res.insights.map(({ v, r }) => {
+    const dir = r > 0 ? v.hi : v.lo;
+    const emoji = r > 0 ? '📈' : '📉';
+    return `<div class="insight-row"><span class="in-emoji">${emoji}</span><div>Your energy tends to be <b>higher</b> on days with <b>${dir}</b> <span class="in-strength">(${strengthWord(r)} link)</span></div></div>`;
+  }).join('') + `<div class="in-note">Based on ${res.days} days · correlation, not proof.</div>`;
 }
 
 // ── Micronutrients (vitamins & minerals) ─────────────────────────────────────
@@ -4907,7 +5060,7 @@ overlayClick = function (e, id) {
 const _origOpenSettings = openSettings;
 openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); renderEnergySettings(); };
 const _origRenderHistory = renderHistory;
-renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); };
+renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyInsights(); };
 
 // Every local save also schedules a debounced push to the cloud (when signed in).
 const _origSaveState = saveState;
@@ -4926,7 +5079,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v5 · 2026-07-04';
+const APP_VERSION = 'v7 · 2026-07-04';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

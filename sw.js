@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v6-2026-07-04';
+const VERSION = 'plateiq-v7-2026-07-04';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -44,6 +44,20 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Web Push: a server-sent push (energy check-in) shows a notification even
+// when the app is fully closed.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  const title = data.title || 'How’s your energy?';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || 'Tap to log — Low · Medium · High',
+    tag: 'energy-checkin', renotify: true,
+    actions: [{ action: 'low', title: '🪫 Low' }, { action: 'medium', title: '🔋 Medium' }, { action: 'high', title: '⚡ High' }],
+    data: { type: 'energy' }
+  }));
 });
 
 // Energy check-in notifications: an action button (or tapping the body) opens

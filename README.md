@@ -95,6 +95,39 @@ PlateIQ pulls these steps on each sync and reconciles them with Fitbit: Fitbit
 stays primary, and Apple Health only fills in steps/calories the watch missed —
 so nothing is ever double-counted.
 
+## Closed-app energy reminders (Web Push)
+
+Optional. Sends energy check-in notifications on your adaptive schedule **even
+when the app is fully closed**, using your Supabase project + a scheduled edge
+function. Requires Cloud sync (above) to be set up and signed in.
+
+1. **Re-run the schema.** `supabase-schema.sql` now also creates the
+   `plateiq_push` table — run it again (it's idempotent).
+2. **Deploy the edge function** (needs the [Supabase CLI](https://supabase.com/docs/guides/cli)):
+   ```bash
+   supabase functions deploy push-energy --no-verify-jwt
+   ```
+   (`--no-verify-jwt` lets the scheduler call it; the function checks its own `CRON_SECRET`.)
+3. **Set the function secrets** (generate a VAPID keypair with
+   `npx web-push generate-vapid-keys`, or use the pair provided to you):
+   ```bash
+   supabase secrets set \
+     VAPID_PUBLIC=<public key> \
+     VAPID_PRIVATE=<private key> \
+     VAPID_SUBJECT=mailto:you@email.com \
+     CRON_SECRET=<any random string>
+   ```
+4. **Schedule it.** Edit `supabase-push-cron.sql` — replace `<PROJECT_REF>` and
+   `<CRON_SECRET>` — then run it in the SQL Editor. It enables `pg_cron`/`pg_net`
+   and pings the function every 15 minutes.
+5. **Turn it on in the app.** Settings → Energy check-ins → **Enable background
+   reminders** (you must be signed in to Cloud sync). The app ships with the
+   matching VAPID *public* key as default; paste your own in the VAPID field if
+   you generated a fresh pair.
+
+The function only nudges you inside your waking hours and respects the same
+adaptive cadence (fewer asks as it gathers data), computed in your timezone.
+
 ## Food data sources
 
 Name search queries **Open Food Facts** (millions of mostly packaged/branded
@@ -119,5 +152,7 @@ and a **Check for updates** link.
 | `index.html` | The entire app (UI, styles, logic) |
 | `manifest.webmanifest` | PWA metadata |
 | `sw.js` | Service worker (offline app shell) |
-| `supabase-schema.sql` | One-time SQL for cloud sync + step ingestion |
+| `supabase-schema.sql` | One-time SQL for cloud sync, step ingestion + push |
+| `supabase-push-cron.sql` | Schedules the energy-reminder sender (pg_cron) |
+| `supabase/functions/push-energy/` | Edge function that sends Web Push reminders |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |

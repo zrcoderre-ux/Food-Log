@@ -966,6 +966,15 @@ body {
 .nutri-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .nutri-chip { font-size: 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; color: var(--text2); cursor: pointer; }
 .nutri-chip:active { background: var(--accent-light); }
+
+/* ═══════════════ ENERGY CHECK-IN ═══════════════ */
+.energy-card { margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; }
+.energy-q { font-size: 14px; font-weight: 600; color: var(--text); text-align: center; margin-bottom: 12px; }
+.energy-btns { display: flex; gap: 8px; }
+.energy-btn { flex: 1; padding: 12px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--text); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; transition: background 0.15s; }
+.energy-btn:active { background: var(--accent-light); }
+.energy-btn .eb-ic { font-size: 22px; }
+.energy-skip { text-align: center; font-size: 12px; color: var(--text3); margin-top: 10px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -1009,6 +1018,17 @@ body {
     </div>
 
     <div class="sync-badge" id="sync-badge" style="display:none;" onclick="syncNow(false)"></div>
+
+    <!-- Energy check-in -->
+    <div class="energy-card" id="energy-card" style="display:none;">
+      <div class="energy-q">⚡ How’s your energy right now?</div>
+      <div class="energy-btns">
+        <button class="energy-btn" onclick="pickEnergy('low')"><span class="eb-ic">🪫</span>Low</button>
+        <button class="energy-btn" onclick="pickEnergy('medium')"><span class="eb-ic">🔋</span>Medium</button>
+        <button class="energy-btn" onclick="pickEnergy('high')"><span class="eb-ic">⚡</span>High</button>
+      </div>
+      <div class="energy-skip" onclick="dismissEnergy()">Not now</div>
+    </div>
 
     <!-- Calorie budget card -->
     <div class="budget-card">
@@ -1250,6 +1270,11 @@ body {
       <div class="steps-sub">Each nutrient is measured over its natural window — daily, a few days, or a week.</div>
       <div id="nutrient-list" style="margin-top:12px;"></div>
     </div>
+    <div class="steps-card" id="energy-hist-card">
+      <div class="steps-title">Energy</div>
+      <div class="steps-sub">Average energy (Low · Medium · High) over the last 7 days.</div>
+      <div id="energy-list" style="margin-top:6px;"></div>
+    </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
       <div class="foods-tabs" style="flex:1;margin:0;">
         <div class="foods-tab active" onclick="historyView('nutrition',this)">Nutrition</div>
@@ -1440,6 +1465,15 @@ body {
       <div class="settings-label">Phone pedometer</div>
       <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Use your phone's motion sensor as a backup step counter for when you're not wearing the watch. It counts while PlateIQ is open on screen (browsers pause sensors in the background). Steps are reconciled with Fitbit — when both are active, Fitbit wins so nothing is double-counted; the phone only adds steps and calories the watch missed.</p>
       <button class="btn-secondary" id="ped-settings-btn" onclick="togglePedometer();renderPedSettings();">Start phone pedometer</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">Energy check-ins</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Rate your energy (Low / Medium / High) through the day so PlateIQ can learn your patterns. It asks more often at first, then eases off as it gathers data — currently about <b id="energy-cadence">—</b>×/day.</p>
+      <button class="btn-primary" id="energy-enable-btn" style="margin-bottom:10px;" onclick="toggleEnergy()">Turn on check-ins</button>
+      <div class="settings-row"><label>Waking hours</label><span><input type="number" id="energy-wake-start" min="0" max="23" style="width:52px;" onchange="saveEnergyCfg()"> – <input type="number" id="energy-wake-end" min="1" max="24" style="width:52px;" onchange="saveEnergyCfg()"></span></div>
+      <button class="btn-secondary" id="energy-notify-btn" style="margin-top:10px;" onclick="enableEnergyNotify()">Enable notifications</button>
+      <p style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;">Notifications fire while the app is open or recently active. Reminders when the app is fully closed need push notifications (a Supabase add-on — ask to enable).</p>
     </div>
 
     <div class="settings-section">
@@ -3654,6 +3688,7 @@ function ensureDataModel() {
   if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
+  if (!state.energy) state.energy = { enabled: true, notify: false, wakeStart: 8, wakeEnd: 22, logs: [], lastPromptT: 0 };
 }
 function dkey(d) {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -3714,6 +3749,7 @@ function renderDiary() {
   renderFitbitStrip(key);
   renderPedometerStrip(key);
   renderSyncBadge();
+  renderEnergyCard();
   renderDiaryMeals(key);
 
   if (fitbitValid() && !state.fitbitDaily[key] && !fbSyncing.has(key)) {
@@ -4550,6 +4586,138 @@ function renderSyncSettings() {
   }
 }
 
+// ── Energy check-ins (adaptive cadence) ──────────────────────────────────────
+const ENERGY_LEVELS = {
+  low: { label: 'Low', emoji: '🪫' },
+  medium: { label: 'Medium', emoji: '🔋' },
+  high: { label: 'High', emoji: '⚡' }
+};
+// Ask often while data is sparse, then ease off as the log grows.
+function energyTargetPerDay() {
+  const n = (state.energy.logs || []).length;
+  if (n < 15) return 5;
+  if (n < 40) return 3;
+  if (n < 80) return 2;
+  return 1;
+}
+function energyIntervalMs() {
+  const hours = Math.max(1, state.energy.wakeEnd - state.energy.wakeStart);
+  return (hours * 3600 * 1000) / energyTargetPerDay();
+}
+function energyTodayCount() {
+  const k = dkey(new Date());
+  return (state.energy.logs || []).filter(l => dkey(new Date(l.t)) === k).length;
+}
+function inWakingHours() { const h = new Date().getHours(); return h >= state.energy.wakeStart && h < state.energy.wakeEnd; }
+function lastEnergyT() { const l = state.energy.logs; return l && l.length ? l[l.length - 1].t : 0; }
+function energyDue() {
+  ensureDataModel();
+  if (!state.energy.enabled || !inWakingHours()) return false;
+  if (energyTodayCount() >= energyTargetPerDay()) return false;
+  const now = Date.now(), iv = energyIntervalMs();
+  return (now - lastEnergyT()) >= iv && (now - (state.energy.lastPromptT || 0)) >= iv * 0.85;
+}
+function logEnergy(level) {
+  ensureDataModel();
+  if (!ENERGY_LEVELS[level]) return;
+  state.energy.logs.push({ t: Date.now(), level });
+  state.energy.lastPromptT = Date.now();
+  saveState();
+  const card = document.getElementById('energy-card'); if (card) card.dataset.forced = '0';
+  renderEnergyCard(); renderEnergyHistory(); renderEnergySettings();
+  toast('Energy logged: ' + ENERGY_LEVELS[level].label);
+}
+function pickEnergy(level) { logEnergy(level); }
+function dismissEnergy() { ensureDataModel(); state.energy.lastPromptT = Date.now(); saveState(); const card = document.getElementById('energy-card'); if (card) card.dataset.forced = '0'; renderEnergyCard(); }
+function openEnergyPrompt() { const card = document.getElementById('energy-card'); if (card) { card.dataset.forced = '1'; card.style.display = 'block'; } }
+function renderEnergyCard() {
+  const card = document.getElementById('energy-card'); if (!card) return;
+  const forced = card.dataset.forced === '1';
+  card.style.display = (forced || energyDue()) ? 'block' : 'none';
+}
+function energyTick() {
+  ensureDataModel();
+  if (!state.energy.enabled) return;
+  if (!energyDue()) return;
+  if (document.hidden && state.energy.notify && 'Notification' in window && Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+    state.energy.lastPromptT = Date.now(); saveState();
+    navigator.serviceWorker.ready.then(reg => {
+      reg.showNotification('How’s your energy?', {
+        body: 'Tap to log — Low · Medium · High',
+        tag: 'energy-checkin', renotify: true,
+        actions: [{ action: 'low', title: '🪫 Low' }, { action: 'medium', title: '🔋 Medium' }, { action: 'high', title: '⚡ High' }],
+        data: { type: 'energy' }
+      });
+    }).catch(() => {});
+  } else if (!document.hidden) {
+    renderEnergyCard();
+  }
+}
+async function enableEnergyNotify() {
+  if (!('Notification' in window)) { toast('Notifications not supported here'); return; }
+  let p = Notification.permission;
+  if (p !== 'granted') p = await Notification.requestPermission();
+  ensureDataModel();
+  state.energy.notify = (p === 'granted');
+  state.energy.enabled = state.energy.enabled || (p === 'granted');
+  saveState(); renderEnergySettings();
+  toast(p === 'granted' ? 'Energy notifications on' : 'Notification permission denied');
+}
+function toggleEnergy() {
+  ensureDataModel();
+  state.energy.enabled = !state.energy.enabled;
+  saveState(); renderEnergySettings(); renderEnergyCard();
+  toast(state.energy.enabled ? 'Energy check-ins on' : 'Energy check-ins off');
+}
+function saveEnergyCfg() {
+  ensureDataModel();
+  const s = +document.getElementById('energy-wake-start').value;
+  const e = +document.getElementById('energy-wake-end').value;
+  if (s >= 0 && s < 24) state.energy.wakeStart = s;
+  if (e > state.energy.wakeStart && e <= 24) state.energy.wakeEnd = e;
+  saveState(); renderEnergySettings();
+}
+function renderEnergySettings() {
+  ensureDataModel();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const val = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const en = document.getElementById('energy-enable-btn');
+  if (en) en.textContent = state.energy.enabled ? 'Turn off check-ins' : 'Turn on check-ins';
+  set('energy-cadence', energyTargetPerDay());
+  val('energy-wake-start', state.energy.wakeStart);
+  val('energy-wake-end', state.energy.wakeEnd);
+  const nb = document.getElementById('energy-notify-btn');
+  if (nb) nb.textContent = ('Notification' in window && Notification.permission === 'granted' && state.energy.notify) ? 'Notifications on ✓' : 'Enable notifications';
+}
+function renderEnergyHistory() {
+  const el = document.getElementById('energy-list'); if (!el) return;
+  const logs = state.energy.logs || [];
+  if (!logs.length) { el.innerHTML = '<div class="rec-empty" style="padding:14px 8px;">No check-ins yet. When prompted, tap Low / Medium / High.</div>'; return; }
+  const today = new Date(); const days = [];
+  for (let i = 6; i >= 0; i--) { const d = new Date(today); d.setDate(d.getDate() - i); days.push(d); }
+  const val = { low: 1, medium: 2, high: 3 };
+  const data = days.map(d => {
+    const k = dkey(d);
+    const dl = logs.filter(l => dkey(new Date(l.t)) === k);
+    const avg = dl.length ? dl.reduce((s, l) => s + val[l.level], 0) / dl.length : 0;
+    return { d, avg, n: dl.length };
+  });
+  const colorFor = v => v >= 2.5 ? 'var(--accent)' : v >= 1.75 ? 'var(--fat)' : v > 0 ? 'var(--warn)' : 'var(--surface2)';
+  el.innerHTML = '<div class="steps-chart">' + data.map(x => {
+    const h = x.avg ? Math.round(x.avg / 3 * 100) : 3;
+    const lbl = x.avg ? (x.avg >= 2.5 ? '⚡' : x.avg >= 1.75 ? '🔋' : '🪫') : '';
+    return `<div class="steps-col"><div class="steps-val">${lbl}</div><div class="steps-bar" style="height:${h}%;background:${colorFor(x.avg)};"></div><div class="steps-day${dkey(x.d) === dkey(today) ? ' is-today' : ''}">${x.d.toLocaleDateString(undefined, { weekday: 'narrow' })}</div></div>`;
+  }).join('') + '</div>';
+}
+function handleEnergyHash() {
+  if (!location.hash || location.hash.indexOf('energy=') < 0) return false;
+  const h = new URLSearchParams(location.hash.slice(1));
+  const lvl = h.get('energy');
+  history.replaceState(null, '', location.pathname + location.search);
+  if (ENERGY_LEVELS[lvl]) logEnergy(lvl); else openEnergyPrompt();
+  return true;
+}
+
 // ── Micronutrients (vitamins & minerals) ─────────────────────────────────────
 // Each nutrient is tracked over a window sized to how the body stores it:
 //   window 1 = replenish ~daily (water-soluble vitamins, not stored)
@@ -4737,9 +4905,9 @@ overlayClick = function (e, id) {
   }
 };
 const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); };
+openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); renderEnergySettings(); };
 const _origRenderHistory = renderHistory;
-renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); };
+renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); };
 
 // Every local save also schedules a debounced push to the cloud (when signed in).
 const _origSaveState = saveState;
@@ -4803,6 +4971,20 @@ renderFitbitSettings();
 renderSyncSettings();
 renderDiary();
 const _vEl = document.getElementById('app-version'); if (_vEl) _vEl.textContent = APP_VERSION;
+
+// Energy check-ins: handle a notification tap, listen for SW messages, and poll.
+handleEnergyHash();
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (ev) => {
+    if (ev.data && ev.data.type === 'energy') {
+      if (ENERGY_LEVELS[ev.data.level]) logEnergy(ev.data.level); else openEnergyPrompt();
+    }
+  });
+}
+energyTick();
+setInterval(energyTick, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { energyTick(); renderEnergyCard(); } });
+
 // Handle a Supabase magic-link return, then pull cloud state if already signed in.
 handleSupabaseRedirect().then(() => { if (sbAuthed()) syncNow(true); });
 // Resume the phone pedometer automatically where no permission gesture is needed

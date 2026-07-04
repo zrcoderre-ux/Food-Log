@@ -1384,6 +1384,12 @@ body {
     </div>
 
     <div class="settings-section">
+      <div class="settings-label">Food database (USDA)</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Add USDA FoodData Central for high-quality whole-food nutrition (great for generic items like “chicken breast” or “brown rice”). Get a free API key at <b>fdc.nal.usda.gov/api-key-signup.html</b> and paste it below — it’s then searched alongside Open Food Facts, with USDA results shown first.</p>
+      <div class="settings-row"><label>USDA API key</label><input type="text" id="usda-key" placeholder="paste key" style="width:170px;" onchange="saveUsdaKey()"></div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-label">Fitbit</div>
       <div id="fitbit-connected" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -1415,6 +1421,9 @@ body {
     <div class="settings-section">
       <div class="settings-label">Danger zone</div>
       <button class="btn-secondary" style="color:var(--warn);border-color:var(--warn);" onclick="resetAll()">Reset all data</button>
+    </div>
+    <div style="text-align:center;font-size:11px;color:var(--text3);padding:8px 0 4px;">
+      PlateIQ <span id="app-version"></span> · <span style="cursor:pointer;color:var(--accent);" onclick="checkForUpdate()">Check for updates</span>
     </div>
     <div style="height:32px;"></div>
   </div>
@@ -3620,6 +3629,7 @@ function ensureDataModel() {
   if (!state.pedometer) state.pedometer = {}; // { 'YYYY-MM-DD': { steps } }  phone-accelerometer steps
   if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
+  if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
 }
 function dkey(d) {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -3765,9 +3775,9 @@ function renderLogSearch() {
     return;
   }
   list.innerHTML = (localHtml ? `<div class="log-db-head">Your foods</div>${localHtml}` : '') +
-    `<div class="log-db-head">Food database</div><div id="off-results"><div class="rec-empty" style="padding:12px;">Searching…</div></div>`;
+    `<div class="log-db-head">Food database</div><div id="db-results"><div class="rec-empty" style="padding:12px;">Searching…</div></div>`;
   const seq = ++offSearchSeq;
-  offSearchTimer = setTimeout(() => searchOpenFoodFacts(q, seq), 350);
+  offSearchTimer = setTimeout(() => searchDatabases(q, seq), 350);
 }
 function offToFood(p) {
   const n = p.nutriments || {};
@@ -3783,37 +3793,68 @@ function offToFood(p) {
   return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand };
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
-async function searchOpenFoodFacts(q, seq) {
-  try {
-    const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
-      '&search_simple=1&action=process&json=1&page_size=30&fields=code,product_name,brands,nutriments,serving_size';
-    const r = await fetch(url);
-    const j = await r.json();
-    if (seq !== offSearchSeq) return; // a newer keystroke superseded this
-    const off = document.getElementById('off-results'); if (!off) return;
-    const prods = (j.products || []).filter(p => p.product_name && p.nutriments &&
-      (p.nutriments['energy-kcal_100g'] != null || p.nutriments['energy-kcal_serving'] != null));
-    if (!prods.length) {
-      off.innerHTML = '<div class="rec-empty" style="padding:12px;">No database matches — try a barcode scan, or a simpler search term.</div>';
-      return;
-    }
-    off.innerHTML = prods.slice(0, 30).map(p => {
-      const f = offToFood(p);
-      offCache[f.id] = f;
-      const label = f.name + (f.brand ? ' · ' + f.brand : '');
-      return pickRow(`logOff('${f.id}')`, '🏷️', label, `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`);
-    }).join('');
-  } catch (e) {
-    if (seq !== offSearchSeq) return;
-    const off = document.getElementById('off-results');
-    if (off) off.innerHTML = '<div class="rec-empty" style="padding:12px;">Couldn’t reach the food database (offline?). Your saved foods still work.</div>';
+async function offSearch(q) {
+  const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
+    '&search_simple=1&action=process&json=1&page_size=25&fields=code,product_name,brands,nutriments,serving_size';
+  const r = await fetch(url);
+  const j = await r.json();
+  return (j.products || [])
+    .filter(p => p.product_name && p.nutriments && (p.nutriments['energy-kcal_100g'] != null || p.nutriments['energy-kcal_serving'] != null))
+    .map(offToFood).filter(f => f.kcal > 0);
+}
+function usdaToFood(item) {
+  const arr = item.foodNutrients || [];
+  const getN = (numStr) => { const n = arr.find(x => String(x.nutrientNumber) === numStr); return n ? num(n.value) : 0; };
+  let kcal = getN('208'); if (!kcal) { const kj = getN('268'); if (kj) kcal = kj / 4.184; }
+  const protein = getN('203'), fat = getN('204'), carbs = getN('205');
+  const brand = (item.brandOwner || item.brandName || '').trim();
+  const id = 'usda' + item.fdcId;
+  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda' };
+}
+async function usdaSearch(q) {
+  if (!(state.usda && state.usda.apiKey)) return [];
+  const url = 'https://api.nal.usda.gov/fdc/v1/foods/search?api_key=' + encodeURIComponent(state.usda.apiKey) +
+    '&query=' + encodeURIComponent(q) + '&pageSize=20&dataType=Foundation,SR%20Legacy,Branded';
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return (j.foods || []).map(usdaToFood).filter(f => f.kcal > 0 && f.name);
+}
+async function searchDatabases(q, seq) {
+  const el = document.getElementById('db-results'); if (!el) return;
+  // USDA first (better for whole foods) when a key is set, then Open Food Facts.
+  const tasks = [];
+  if (state.usda && state.usda.apiKey) tasks.push(usdaSearch(q).catch(() => []));
+  tasks.push(offSearch(q).catch(() => []));
+  let results;
+  try { results = await Promise.all(tasks); } catch (e) { results = []; }
+  if (seq !== offSearchSeq) return; // superseded by a newer keystroke
+  const merged = [].concat(...results);
+  if (!merged.length) {
+    el.innerHTML = '<div class="rec-empty" style="padding:12px;">No database matches — try a barcode scan, or a simpler term.</div>';
+    return;
   }
+  merged.forEach(f => { offCache[f.id] = f; });
+  el.innerHTML = merged.slice(0, 40).map(f =>
+    pickRow(`logOff('${f.id}')`, f.emoji, f.name + (f.brand ? ' · ' + f.brand : ''),
+      `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`)
+  ).join('');
 }
 function logOff(id) {
   const f = offCache[id]; if (!f) return;
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
   openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, defaultQty: 1 });
+}
+function saveUsdaKey() {
+  ensureDataModel();
+  state.usda.apiKey = (document.getElementById('usda-key').value || '').trim();
+  saveState();
+  toast(state.usda.apiKey ? 'USDA connected' : 'USDA key cleared');
+}
+function renderUsdaSettings() {
+  ensureDataModel();
+  const el = document.getElementById('usda-key'); if (el) el.value = state.usda.apiKey || '';
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -4547,7 +4588,7 @@ overlayClick = function (e, id) {
   }
 };
 const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); };
+openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); };
 const _origRenderHistory = renderHistory;
 renderHistory = function () { _origRenderHistory(); renderStepsChart(); };
 
@@ -4568,8 +4609,42 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
+const APP_VERSION = 'v5 · 2026-07-04';
+function checkForUpdate() {
+  if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
+  toast('Checking for updates…');
+  navigator.serviceWorker.getRegistration().then((r) => {
+    if (!r) { toast('Not installed yet'); return; }
+    r.update().then(() => { setTimeout(() => { if (!r.installing && !r.waiting) toast('You’re up to date'); }, 1500); });
+  });
+}
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  const hadController = !!navigator.serviceWorker.controller;
+  let refreshing = false;
+  // When a new service worker takes control, reload once to show the update.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (refreshing || !hadController) return; // don't reload on the very first install
+    refreshing = true;
+    location.reload();
+  });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      reg.update();
+      if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) nw.postMessage('SKIP_WAITING');
+        });
+      });
+      setInterval(() => reg.update(), 30 * 60 * 1000); // periodic check while open
+    }).catch(() => {});
+  });
+  // Also check for a new version whenever the app returns to the foreground.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) navigator.serviceWorker.getRegistration().then((r) => r && r.update());
+  });
 }
 
 // ── Boot the tracker layer ───────────────────────────────────────────────────
@@ -4578,6 +4653,7 @@ if (handleFitbitRedirect()) { /* returned from Fitbit auth */ }
 renderFitbitSettings();
 renderSyncSettings();
 renderDiary();
+const _vEl = document.getElementById('app-version'); if (_vEl) _vEl.textContent = APP_VERSION;
 // Handle a Supabase magic-link return, then pull cloud state if already signed in.
 handleSupabaseRedirect().then(() => { if (sbAuthed()) syncNow(true); });
 // Resume the phone pedometer automatically where no permission gesture is needed

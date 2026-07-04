@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v4-2026-07-04';
+const VERSION = 'plateiq-v5-2026-07-04';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -22,6 +22,7 @@ const BYPASS_HOSTS = [
   'www.googleapis.com',
   'supabase.co',
   'supabase.in',
+  'api.nal.usda.gov',
 ];
 
 self.addEventListener('install', (event) => {
@@ -56,10 +57,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigations: serve the cached app shell first, fall back to network.
+  // Navigations: network-FIRST so an online user always gets the latest app,
+  // falling back to the cached shell only when offline. This is what makes
+  // deploys show up without reinstalling.
   if (req.mode === 'navigate') {
     event.respondWith(
-      caches.match('./index.html').then((cached) => cached || fetch(req).catch(() => caches.match('./')))
+      fetch(req).then((res) => {
+        const clone = res.clone();
+        caches.open(SHELL_CACHE).then((c) => c.put('./index.html', clone));
+        return res;
+      }).catch(() => caches.match('./index.html').then((c) => c || caches.match('./')))
     );
     return;
   }

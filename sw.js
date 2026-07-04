@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v5-2026-07-04';
+const VERSION = 'plateiq-v6-2026-07-04';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -44,6 +44,22 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// Energy check-in notifications: an action button (or tapping the body) opens
+// the app and passes the chosen level so it can be logged.
+self.addEventListener('notificationclick', (event) => {
+  const level = event.action || '';
+  event.notification.close();
+  const url = './index.html#energy=' + (level || 'ask');
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ('focus' in c) { c.postMessage({ type: 'energy', level }); return c.focus(); }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
 });
 
 self.addEventListener('fetch', (event) => {

@@ -864,6 +864,8 @@ body {
   color: var(--text3); background: var(--surface2); border-radius: 999px; cursor: pointer;
 }
 .log-source-tab.active { color: #fff; background: var(--accent); }
+.log-db-head { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 2px 6px; }
+.log-db-head:first-child { margin-top: 2px; }
 .qty-preview {
   background: var(--surface2); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px;
   display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2);
@@ -1692,6 +1694,7 @@ body {
 <div class="toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
 // ════════════════════════════════════════ DATA ════════════════════════════════
 const FOOD_LIBRARY = [
@@ -3745,14 +3748,72 @@ function pickRow(onclick, emoji, name, macros) {
     <div class="fpi-info"><div class="fpi-name">${escapeHtml(name)}</div><div class="fpi-macros">${macros}</div></div>
     <span class="fpi-add">+</span></div>`;
 }
+let offSearchTimer = null, offSearchSeq = 0;
+const offCache = {};
 function renderLogSearch() {
   const q = (document.getElementById('log-search-input').value || '').toLowerCase().trim();
   let foods = allFoods().filter(f => !q || f.name.toLowerCase().includes(q));
   foods.sort((a, b) => (state.ratings[b.id] === 'yes' ? 1 : 0) - (state.ratings[a.id] === 'yes' ? 1 : 0));
   const list = document.getElementById('log-search-list');
-  list.innerHTML = foods.slice(0, 80).map(f =>
+  const localHtml = foods.slice(0, 40).map(f =>
     pickRow(`logFood('${f.id}')`, f.emoji || '🍽️', f.name, `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`)
-  ).join('') || '<div class="rec-empty">No matches. Try scanning a barcode above.</div>';
+  ).join('');
+
+  if (offSearchTimer) clearTimeout(offSearchTimer);
+  if (q.length < 2) {
+    list.innerHTML = localHtml || '<div class="rec-empty">Type to search millions of foods, or scan a barcode above.</div>';
+    return;
+  }
+  list.innerHTML = (localHtml ? `<div class="log-db-head">Your foods</div>${localHtml}` : '') +
+    `<div class="log-db-head">Food database</div><div id="off-results"><div class="rec-empty" style="padding:12px;">Searching…</div></div>`;
+  const seq = ++offSearchSeq;
+  offSearchTimer = setTimeout(() => searchOpenFoodFacts(q, seq), 350);
+}
+function offToFood(p) {
+  const n = p.nutriments || {};
+  const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
+  const basis = perServing ? '_serving' : '_100g';
+  const kcal = Math.round(num(n['energy-kcal' + basis]) || num(n['energy-kcal_100g']));
+  const protein = Math.round(num(n['proteins' + basis]));
+  const carbs = Math.round(num(n['carbohydrates' + basis]));
+  const fat = Math.round(num(n['fat' + basis]));
+  const serving = perServing && p.serving_size ? p.serving_size : (perServing ? '1 serving' : '100 g');
+  const brand = p.brands ? p.brands.split(',')[0].trim() : '';
+  const id = p.code ? 'bc' + p.code : 'off' + Math.abs(hashStr((p.product_name || '') + brand));
+  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand };
+}
+function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
+async function searchOpenFoodFacts(q, seq) {
+  try {
+    const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
+      '&search_simple=1&action=process&json=1&page_size=30&fields=code,product_name,brands,nutriments,serving_size';
+    const r = await fetch(url);
+    const j = await r.json();
+    if (seq !== offSearchSeq) return; // a newer keystroke superseded this
+    const off = document.getElementById('off-results'); if (!off) return;
+    const prods = (j.products || []).filter(p => p.product_name && p.nutriments &&
+      (p.nutriments['energy-kcal_100g'] != null || p.nutriments['energy-kcal_serving'] != null));
+    if (!prods.length) {
+      off.innerHTML = '<div class="rec-empty" style="padding:12px;">No database matches — try a barcode scan, or a simpler search term.</div>';
+      return;
+    }
+    off.innerHTML = prods.slice(0, 30).map(p => {
+      const f = offToFood(p);
+      offCache[f.id] = f;
+      const label = f.name + (f.brand ? ' · ' + f.brand : '');
+      return pickRow(`logOff('${f.id}')`, '🏷️', label, `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`);
+    }).join('');
+  } catch (e) {
+    if (seq !== offSearchSeq) return;
+    const off = document.getElementById('off-results');
+    if (off) off.innerHTML = '<div class="rec-empty" style="padding:12px;">Couldn’t reach the food database (offline?). Your saved foods still work.</div>';
+  }
+}
+function logOff(id) {
+  const f = offCache[id]; if (!f) return;
+  ensureDataModel();
+  if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, defaultQty: 1 });
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -3823,8 +3884,21 @@ function confirmLog() {
 }
 
 // ── Barcode scanning + Open Food Facts ───────────────────────────────────────
-let scanStream = null, scanDetector = null, scanRAF = null, scanning = false;
+let scanStream = null, scanDetector = null, scanRAF = null, scanning = false, zxingReader = null;
+const SCAN_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'];
 function num(x) { const v = parseFloat(x); return isFinite(v) ? v : 0; }
+async function startScanCamera(statusEl) {
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+    const v = document.getElementById('scanner-video');
+    v.srcObject = scanStream; v.setAttribute('playsinline', ''); v.muted = true;
+    await v.play();
+    return true;
+  } catch (e) {
+    statusEl.textContent = 'Camera blocked — allow camera access in your browser, or type the barcode below.';
+    return false;
+  }
+}
 async function openScanner() {
   logTargetSlot = logTargetSlot || defaultSlot();
   document.getElementById('scanner-result').style.display = 'none';
@@ -3832,21 +3906,46 @@ async function openScanner() {
   document.getElementById('scanner-manual-input').value = '';
   openModalById('scanner-modal');
   const statusEl = document.getElementById('scanner-status');
-  if (!('BarcodeDetector' in window)) {
-    statusEl.textContent = 'Live scanning isn’t supported here — type the barcode number below.';
-    return;
+  const v = document.getElementById('scanner-video');
+
+  // Path A — native BarcodeDetector (Chrome / Android): fastest when present.
+  if ('BarcodeDetector' in window) {
+    try {
+      scanDetector = new BarcodeDetector({ formats: SCAN_FORMATS });
+      if (await startScanCamera(statusEl)) {
+        scanning = true;
+        statusEl.textContent = 'Scanning… hold steady over the barcode.';
+        scanLoop();
+      }
+      return;
+    } catch (e) { /* fall through to ZXing */ }
   }
-  try { scanDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'] }); }
-  catch (e) { statusEl.textContent = 'Scanner unavailable — type the barcode number below.'; return; }
-  try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    const v = document.getElementById('scanner-video');
-    v.srcObject = scanStream; await v.play();
-    scanning = true; statusEl.textContent = 'Scanning… hold steady over the barcode.';
-    scanLoop();
-  } catch (e) {
-    statusEl.textContent = 'Camera unavailable — type the barcode number below.';
+
+  // Path B — ZXing (works in Safari / iOS and everywhere else).
+  if (window.ZXing && ZXing.BrowserMultiFormatReader) {
+    try {
+      zxingReader = new ZXing.BrowserMultiFormatReader();
+      statusEl.textContent = 'Scanning… hold steady over the barcode.';
+      const onResult = (result) => {
+        if (result && result.getText) {
+          const text = result.getText();
+          stopScan();
+          if (navigator.vibrate) navigator.vibrate(60);
+          lookupBarcode(text);
+        }
+      };
+      const constraints = { video: { facingMode: { ideal: 'environment' } } };
+      if (zxingReader.decodeFromConstraints) await zxingReader.decodeFromConstraints(constraints, v, onResult);
+      else await zxingReader.decodeFromVideoDevice(null, v, onResult);
+      return;
+    } catch (e) {
+      statusEl.textContent = 'Camera blocked — allow camera access, or type the barcode below.';
+      return;
+    }
   }
+
+  // Path C — no decoder available at all.
+  statusEl.textContent = 'Live scanning unavailable here — type the barcode number below.';
 }
 async function scanLoop() {
   if (!scanning) return;
@@ -3865,7 +3964,9 @@ async function scanLoop() {
 function stopScan() {
   scanning = false;
   if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = null; }
+  if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
   if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  const v = document.getElementById('scanner-video'); if (v) { try { v.srcObject = null; } catch (e) {} }
 }
 function closeScanner() { stopScan(); closeModal('scanner-modal'); }
 function lookupManualBarcode() {

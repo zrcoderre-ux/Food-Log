@@ -1317,6 +1317,33 @@ body {
     </div>
 
     <div class="settings-section">
+      <div class="settings-label">Cloud sync</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Sync your diary and settings across devices, and enable zero-touch step import. Uses your own free Supabase project — paste its <b>Project URL</b> and <b>anon public key</b> from Supabase → Project Settings → API. (See the README for the one-time SQL setup.)</p>
+      <div class="settings-row"><label>Supabase URL</label><input type="text" id="sb-url" placeholder="https://xxxx.supabase.co" onchange="saveSyncConfig()" style="width:170px;"></div>
+      <div class="settings-row"><label>Anon key</label><input type="text" id="sb-key" placeholder="eyJhbGci…" onchange="saveSyncConfig()" style="width:170px;"></div>
+      <div id="sync-signedout">
+        <div class="settings-row"><label>Email</label><input type="email" id="sb-email" placeholder="you@email.com" style="width:170px;"></div>
+        <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Send sign-in link</button>
+      </div>
+      <div id="sync-signedin" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
+          <span style="font-size:16px;">☁️</span><div>Signed in as <b id="sb-user"></b></div>
+        </div>
+        <div class="export-grid">
+          <div class="export-btn" onclick="syncNow(false)"><span class="eicon">🔄</span>Sync now</div>
+          <div class="export-btn" onclick="signOutSb()"><span class="eicon">🚪</span>Sign out</div>
+        </div>
+        <div class="settings-label" style="margin-top:16px;">Zero-touch step import</div>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Point an Apple Shortcuts automation at this endpoint to push your Health steps automatically in the background (recipe in the README). These are your personal ingest credentials — keep them private.</p>
+        <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 12px;font-size:11px;word-break:break-all;line-height:1.7;">
+          <div><span style="color:var(--text3);">Endpoint</span><br><code id="sb-ingest-url"></code></div>
+          <div style="margin-top:6px;"><span style="color:var(--text3);">Token</span><br><code id="sb-ingest-token"></code></div>
+        </div>
+        <button class="btn-secondary" style="margin-top:8px;" onclick="copyIngest()">Copy ingest details</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-label">Fitbit</div>
       <div id="fitbit-connected" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -3550,6 +3577,8 @@ function ensureDataModel() {
   if (!state.fitbit) state.fitbit = { clientId: '', token: null, expiresAt: 0, userId: null };
   if (!state.fitbitDaily) state.fitbitDaily = {};
   if (!state.pedometer) state.pedometer = {}; // { 'YYYY-MM-DD': { steps } }  phone-accelerometer steps
+  if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
+  if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
 }
 function dkey(d) {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -3871,6 +3900,7 @@ function connectFitbit() {
 }
 function handleFitbitRedirect() {
   if (!location.hash || location.hash.indexOf('access_token=') < 0) return false;
+  if (location.hash.indexOf('refresh_token=') >= 0) return false; // that's a Supabase redirect
   const h = new URLSearchParams(location.hash.slice(1));
   const token = h.get('access_token');
   if (!token) return false;
@@ -3947,21 +3977,24 @@ function stepsBySource(key) {
   ensureDataModel();
   const fb = state.fitbitDaily[key];
   const ped = state.pedometer[key];
+  const h = state.healthDaily[key];
   return {
     fitbit: fb && fb.steps != null ? fb.steps : 0,
-    phone: ped && ped.steps ? Math.round(ped.steps) : 0
+    phone: ped && ped.steps ? Math.round(ped.steps) : 0,
+    health: h && h.steps ? Math.round(h.steps) : 0 // Apple Health (background, all-day)
   };
 }
 function reconciledSteps(key) {
   const s = stepsBySource(key);
-  return Math.max(s.fitbit, s.phone); // overlap counted once, not summed
+  return Math.max(s.fitbit, s.phone, s.health); // overlap counted once, not summed
 }
 function exerciseCalsFor(key) {
   const fb = state.fitbitDaily[key];
   const s = stepsBySource(key);
+  const bestBackup = Math.max(s.phone, s.health); // best non-Fitbit source
   if (fb && fb.exerciseCals) {
-    // Fitbit is primary; add calories only for phone steps beyond Fitbit's count.
-    const extra = Math.max(0, s.phone - s.fitbit);
+    // Fitbit is primary; add calories only for steps beyond Fitbit's count.
+    const extra = Math.max(0, bestBackup - s.fitbit);
     return Math.round(fb.exerciseCals + extra * kcalPerStep());
   }
   // No Fitbit activity data for this day — estimate from the reconciled steps.
@@ -4032,7 +4065,7 @@ function renderPedometerStrip(key) {
   const isToday = key === dkey(new Date());
   document.getElementById('ped-steps').textContent = s.phone.toLocaleString();
   const combWrap = document.getElementById('ped-combined-wrap');
-  if (s.fitbit > 0) {
+  if (s.fitbit > 0 || s.health > 0) {
     combWrap.style.display = '';
     document.getElementById('ped-combined').textContent = reconciledSteps(key).toLocaleString();
   } else {
@@ -4043,6 +4076,216 @@ function renderPedometerStrip(key) {
   if (!isToday) { hint.innerHTML = 'phone counts today only'; dot.style.display = 'none'; }
   else if (ped.active) { hint.innerHTML = '<span class="ped-live-dot" id="ped-dot"></span>counting · tap to pause'; }
   else { hint.innerHTML = 'tap to start'; }
+}
+
+// ── Cloud sync (Supabase, plain REST — no SDK) ───────────────────────────────
+function syncCfg() { ensureDataModel(); return state.sync; }
+function sbConfigured() { const s = syncCfg(); return !!(s.url && s.anonKey); }
+function sbAuthed() { const s = syncCfg(); return !!(s.access && s.userId); }
+function sbUrl(path) { return syncCfg().url.replace(/\/+$/, '') + path; }
+function sbBaseHeaders() { return { apikey: syncCfg().anonKey, 'Content-Type': 'application/json' }; }
+function sbAuthHeaders() { return { ...sbBaseHeaders(), Authorization: 'Bearer ' + syncCfg().access }; }
+function ingestEndpoint() { return syncCfg().url.replace(/\/+$/, '') + '/rest/v1/rpc/ingest_steps'; }
+function cryptoRandom(n) {
+  const a = new Uint8Array(n); crypto.getRandomValues(a);
+  return Array.from(a, b => ('0' + b.toString(16)).slice(-2)).join('');
+}
+function saveSyncConfig() {
+  ensureDataModel();
+  state.sync.url = (document.getElementById('sb-url').value || '').trim().replace(/\/+$/, '');
+  state.sync.anonKey = (document.getElementById('sb-key').value || '').trim();
+  saveState();
+  renderSyncSettings();
+}
+async function sendMagicLink() {
+  ensureDataModel();
+  if (!sbConfigured()) { toast('Enter your Supabase URL and anon key first'); return; }
+  const email = (document.getElementById('sb-email').value || '').trim();
+  if (!email) { toast('Enter your email'); return; }
+  state.sync.email = email; saveState();
+  try {
+    const redirect = encodeURIComponent(location.origin + location.pathname);
+    const r = await fetch(sbUrl('/auth/v1/otp?redirect_to=' + redirect), {
+      method: 'POST', headers: sbBaseHeaders(),
+      body: JSON.stringify({ email, create_user: true })
+    });
+    if (r.ok) toast('Check your email for the sign-in link');
+    else { const j = await r.json().catch(() => ({})); toast('Sign-in failed: ' + (j.msg || j.error_description || r.status)); }
+  } catch (e) { toast('Network error sending link'); }
+}
+function applySbSession(j) {
+  ensureDataModel();
+  state.sync.access = j.access_token;
+  state.sync.refresh = j.refresh_token || state.sync.refresh;
+  state.sync.expiresAt = Date.now() + ((j.expires_in || 3600) * 1000);
+  if (j.user) { state.sync.userId = j.user.id; state.sync.userEmail = j.user.email; }
+  saveState();
+}
+async function handleSupabaseRedirect() {
+  if (!location.hash || location.hash.indexOf('access_token=') < 0 || location.hash.indexOf('refresh_token=') < 0) return false;
+  const h = new URLSearchParams(location.hash.slice(1));
+  ensureDataModel();
+  state.sync.access = h.get('access_token');
+  state.sync.refresh = h.get('refresh_token');
+  state.sync.expiresAt = Date.now() + (parseInt(h.get('expires_in') || '3600', 10) * 1000);
+  saveState();
+  history.replaceState(null, '', location.pathname + location.search);
+  await sbFetchUser();
+  return true;
+}
+async function sbFetchUser() {
+  try {
+    const r = await fetch(sbUrl('/auth/v1/user'), { headers: sbAuthHeaders() });
+    if (r.ok) { const u = await r.json(); state.sync.userId = u.id; state.sync.userEmail = u.email; saveState(); }
+  } catch (e) {}
+}
+async function refreshSb() {
+  const s = syncCfg();
+  if (!s.refresh) return false;
+  try {
+    const r = await fetch(sbUrl('/auth/v1/token?grant_type=refresh_token'), {
+      method: 'POST', headers: sbBaseHeaders(), body: JSON.stringify({ refresh_token: s.refresh })
+    });
+    if (!r.ok) return false;
+    applySbSession(await r.json());
+    return true;
+  } catch (e) { return false; }
+}
+async function sbValid() {
+  const s = syncCfg();
+  if (!s.access) return false;
+  if (Date.now() > s.expiresAt - 60000) return await refreshSb();
+  return true;
+}
+async function sbAuthedFetch(path, opts = {}) {
+  if (!(await sbValid())) throw new Error('not signed in');
+  return fetch(sbUrl(path), { ...opts, headers: { ...sbAuthHeaders(), ...(opts.headers || {}) } });
+}
+function signOutSb() {
+  ensureDataModel();
+  Object.assign(state.sync, { access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null });
+  saveState(); renderSyncSettings(); toast('Signed out');
+}
+
+// State that is safe to sync (excludes device-local secrets: sync tokens, Fitbit tokens)
+function serializableState() {
+  const { sync, ...rest } = state;
+  const copy = JSON.parse(JSON.stringify(rest));
+  if (copy.fitbit) copy.fitbit = { clientId: copy.fitbit.clientId || '' };
+  return copy;
+}
+function unionById(a, b) {
+  a = a || []; b = b || [];
+  const seen = new Set(a.map(x => x && x.id)); const out = a.slice();
+  b.forEach(x => { if (x && x.id && !seen.has(x.id)) { seen.add(x.id); out.push(x); } });
+  return out;
+}
+function mergeDaily(a, b) {
+  a = a || {}; b = b || {}; const out = { ...a };
+  Object.keys(b).forEach(k => {
+    if (!out[k]) out[k] = b[k];
+    else if ((b[k].syncedAt || 0) > (out[k].syncedAt || 0)) out[k] = b[k];
+  });
+  return out;
+}
+function mergeCloudInto(cloud) {
+  if (!cloud) return;
+  const cloudNewer = (cloud._updatedAt || 0) > (state._updatedAt || 0);
+  if (cloud.settings && cloudNewer) state.settings = { ...state.settings, ...cloud.settings };
+  if (cloud.planner && cloudNewer) state.planner = { ...state.planner, ...cloud.planner };
+  state.customFoods = unionById(state.customFoods, cloud.customFoods);
+  state.savedMeals = unionById(state.savedMeals, cloud.savedMeals);
+  state.recipes = unionById(state.recipes, cloud.recipes);
+  state.ratings = cloudNewer ? { ...state.ratings, ...cloud.ratings } : { ...cloud.ratings, ...state.ratings };
+  state.diary = state.diary || {};
+  const cd = cloud.diary || {};
+  Object.keys(cd).forEach(k => {
+    const le = (state.diary[k] && state.diary[k].entries) || [];
+    const ce = (cd[k] && cd[k].entries) || [];
+    state.diary[k] = { entries: unionById(le, ce) };
+  });
+  state.fitbitDaily = mergeDaily(state.fitbitDaily, cloud.fitbitDaily);
+  state.pedometer = mergeDaily(state.pedometer, cloud.pedometer);
+  state.healthDaily = mergeDaily(state.healthDaily, cloud.healthDaily);
+  _origSaveState();
+}
+async function pushCloud() {
+  if (!sbAuthed()) return;
+  state._updatedAt = Date.now();
+  try {
+    await sbAuthedFetch('/rest/v1/plateiq_state?on_conflict=user_id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ user_id: state.sync.userId, data: serializableState(), updated_at: new Date().toISOString() })
+    });
+  } catch (e) {}
+}
+async function pullCloud() {
+  if (!sbAuthed()) return null;
+  try {
+    const r = await sbAuthedFetch('/rest/v1/plateiq_state?select=data&user_id=eq.' + state.sync.userId, {});
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return rows && rows.length ? rows[0].data : null;
+  } catch (e) { return null; }
+}
+async function pullSteps() {
+  if (!sbAuthed()) return;
+  try {
+    const r = await sbAuthedFetch('/rest/v1/plateiq_steps?select=day,steps,source&user_id=eq.' + state.sync.userId, {});
+    if (!r.ok) return;
+    const rows = await r.json();
+    ensureDataModel();
+    rows.forEach(row => { state.healthDaily[row.day] = { steps: row.steps, source: row.source, syncedAt: Date.now() }; });
+    _origSaveState();
+  } catch (e) {}
+}
+async function ensureIngestToken() {
+  if (!sbAuthed() || state.sync.ingestToken) return;
+  const token = 'piq_' + cryptoRandom(18);
+  try {
+    const r = await sbAuthedFetch('/rest/v1/plateiq_tokens', {
+      method: 'POST', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ token, user_id: state.sync.userId })
+    });
+    if (r.ok || r.status === 201) { state.sync.ingestToken = token; _origSaveState(); }
+  } catch (e) {}
+}
+let _syncing = false;
+async function syncNow(silent) {
+  if (!sbAuthed()) { if (!silent) toast('Sign in to sync first'); return; }
+  if (_syncing) return;
+  _syncing = true;
+  if (!silent) toast('Syncing…');
+  try {
+    mergeCloudInto(await pullCloud());
+    await pullSteps();
+    await ensureIngestToken();
+    await pushCloud();
+    renderDiary(); renderSyncSettings();
+    if (!silent) toast('Synced');
+  } finally { _syncing = false; }
+}
+function copyIngest() {
+  const text = 'Endpoint: ' + ingestEndpoint() + '\nToken: ' + (state.sync.ingestToken || '') + '\napikey: ' + syncCfg().anonKey;
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Copied ingest details')).catch(() => toast('Copy failed'));
+}
+function renderSyncSettings() {
+  ensureDataModel();
+  const s = state.sync;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('sb-url', s.url || ''); set('sb-key', s.anonKey || '');
+  if (s.email) set('sb-email', s.email);
+  const authed = sbAuthed();
+  const so = document.getElementById('sync-signedout'); const si = document.getElementById('sync-signedin');
+  if (so) so.style.display = authed ? 'none' : 'block';
+  if (si) si.style.display = authed ? 'block' : 'none';
+  if (authed) {
+    const t = id => document.getElementById(id);
+    if (t('sb-user')) t('sb-user').textContent = s.userEmail || '—';
+    if (t('sb-ingest-url')) t('sb-ingest-url').textContent = ingestEndpoint();
+    if (t('sb-ingest-token')) t('sb-ingest-token').textContent = s.ingestToken || '(syncing…)';
+  }
 }
 
 // ── Recommendations ──────────────────────────────────────────────────────────
@@ -4108,7 +4351,18 @@ overlayClick = function (e, id) {
   }
 };
 const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); };
+openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); };
+
+// Every local save also schedules a debounced push to the cloud (when signed in).
+const _origSaveState = saveState;
+let _cloudPushTimer = null;
+saveState = function () {
+  _origSaveState();
+  if (sbAuthed()) {
+    if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
+    _cloudPushTimer = setTimeout(() => { _cloudPushTimer = null; pushCloud(); }, 2500);
+  }
+};
 const _origCloseSettings = closeSettings;
 closeSettings = function () {
   _origCloseSettings();
@@ -4124,7 +4378,10 @@ if ('serviceWorker' in navigator) {
 ensureDataModel();
 if (handleFitbitRedirect()) { /* returned from Fitbit auth */ }
 renderFitbitSettings();
+renderSyncSettings();
 renderDiary();
+// Handle a Supabase magic-link return, then pull cloud state if already signed in.
+handleSupabaseRedirect().then(() => { if (sbAuthed()) syncNow(true); });
 // Resume the phone pedometer automatically where no permission gesture is needed
 // (Android/desktop). iOS requires a tap each session, so it shows "tap to start".
 if (localStorage.getItem('plateiq_ped_on') && typeof DeviceMotionEvent !== 'undefined'

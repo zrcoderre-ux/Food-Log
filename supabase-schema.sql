@@ -90,3 +90,33 @@ $$;
 
 revoke all on function public.ingest_steps(text, date, integer, text) from public;
 grant execute on function public.ingest_steps(text, date, integer, text) to anon, authenticated;
+
+-- ── Web Push subscriptions for energy check-in reminders ────────────────────
+-- One row per user: their push subscription plus the adaptive schedule the
+-- server needs (cadence, waking hours, timezone). The scheduled edge function
+-- reads this to decide who to nudge. RLS keeps each row private to its owner;
+-- the edge function uses the service-role key (bypasses RLS) to read all rows.
+create table if not exists public.plateiq_push (
+  user_id        uuid primary key references auth.users (id) on delete cascade,
+  subscription   jsonb not null,
+  target_per_day integer not null default 3,
+  wake_start     integer not null default 8,
+  wake_end       integer not null default 22,
+  tz             text not null default 'UTC',
+  last_sent      timestamptz,
+  updated_at     timestamptz not null default now()
+);
+alter table public.plateiq_push enable row level security;
+
+drop policy if exists "own push select" on public.plateiq_push;
+create policy "own push select" on public.plateiq_push
+  for select using (auth.uid() = user_id);
+drop policy if exists "own push upsert" on public.plateiq_push;
+create policy "own push upsert" on public.plateiq_push
+  for insert with check (auth.uid() = user_id);
+drop policy if exists "own push update" on public.plateiq_push;
+create policy "own push update" on public.plateiq_push
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "own push delete" on public.plateiq_push;
+create policy "own push delete" on public.plateiq_push
+  for delete using (auth.uid() = user_id);

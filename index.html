@@ -6,7 +6,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="PlateIQ">
-<title>PlateIQ — Meal Planner</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#2D6A4F">
+<meta name="description" content="Track food, macros and nutrients, scan barcodes, sync Fitbit, plan meals and get smart food recommendations.">
+<title>PlateIQ — Food &amp; Macro Tracker</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <style>
@@ -759,6 +765,155 @@ body {
 .done-state .ds-icon { font-size: 56px; margin-bottom: 16px; }
 .done-state h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
 .done-state p { font-size: 14px; color: var(--text2); line-height: 1.6; margin-bottom: 20px; }
+
+/* ═══════════════ TODAY / DIARY ═══════════════ */
+.diary-wrap { padding-top: 6px; }
+.diary-datebar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px 6px;
+}
+.diary-date { text-align: center; cursor: pointer; line-height: 1.15; }
+.diary-date #diary-date-label { display: block; font-size: 16px; font-weight: 600; color: var(--text); }
+.diary-date #diary-date-sub { display: block; font-size: 11px; color: var(--text3); }
+
+.budget-card {
+  margin: 6px 16px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 16px; display: flex; align-items: center; gap: 16px;
+}
+.budget-ring-wrap { position: relative; width: 108px; height: 108px; flex-shrink: 0; }
+.budget-ring { width: 108px; height: 108px; transform: rotate(-90deg); }
+.budget-ring .ring-bg { fill: none; stroke: var(--surface2); stroke-width: 10; }
+.budget-ring .ring-fill {
+  fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round;
+  stroke-dasharray: 327; stroke-dashoffset: 327; transition: stroke-dashoffset 0.5s ease, stroke 0.3s;
+}
+.budget-ring-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+}
+.budget-remaining { font-size: 26px; font-weight: 600; color: var(--text); line-height: 1; }
+.budget-remaining-lbl { font-size: 10px; color: var(--text3); margin-top: 3px; letter-spacing: 0.03em; }
+.budget-breakdown { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.bd-row { display: flex; align-items: center; font-size: 13px; color: var(--text2); }
+.bd-row .bd-op { width: 14px; color: var(--text3); font-weight: 600; }
+.bd-row .bd-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; }
+.bd-row .bd-lbl { flex: 1; }
+.bd-row .bd-val { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.bd-row.bd-total { border-top: 1px solid var(--border); padding-top: 7px; margin-top: 1px; color: var(--text); }
+.bd-row.bd-total .bd-lbl, .bd-row.bd-total .bd-val { font-weight: 600; }
+.mc-unit { font-size: 12px; font-weight: 400; color: var(--text3); margin-left: 1px; }
+
+.fitbit-strip {
+  margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 9px 14px; display: flex; align-items: center;
+  gap: 14px; font-size: 12px; color: var(--text2); cursor: pointer;
+}
+.fitbit-strip .fb-icon { font-size: 16px; }
+.fitbit-strip .fb-stat b { color: var(--text); font-weight: 600; }
+.fitbit-strip .fb-sync { margin-left: auto; color: var(--accent); font-size: 11px; }
+
+.diary-actions { display: flex; gap: 10px; padding: 0 16px 14px; }
+.diary-action {
+  flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 11px 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+  color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background 0.15s;
+}
+.diary-action:active { background: var(--surface2); }
+.diary-action .da-ic { font-size: 15px; }
+
+.diary-meal {
+  margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.diary-meal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px 9px; border-bottom: 1px solid var(--border);
+}
+.diary-meal-head .dm-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.diary-meal-head .dm-kcal { font-size: 12px; color: var(--text3); font-variant-numeric: tabular-nums; }
+.diary-entry {
+  display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+  border-bottom: 1px solid var(--surface2);
+}
+.diary-entry:last-child { border-bottom: none; }
+.diary-entry .de-emoji { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+.diary-entry .de-main { flex: 1; min-width: 0; }
+.diary-entry .de-name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.diary-entry .de-sub { font-size: 11px; color: var(--text3); }
+.diary-entry .de-kcal { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; font-weight: 500; }
+.diary-entry .de-del { color: var(--text3); font-size: 15px; cursor: pointer; padding: 2px 4px; }
+.diary-entry .de-del:active { color: var(--warn); }
+.diary-add-btn {
+  width: 100%; background: none; border: none; padding: 10px 14px; text-align: left;
+  font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--accent);
+  cursor: pointer;
+}
+.diary-add-btn:active { background: var(--surface2); }
+
+/* ═══════════════ LOG / QTY MODALS ═══════════════ */
+.log-source-tabs, .foods-tabs.log-source-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.log-source-tab {
+  flex: 1; text-align: center; padding: 7px 4px; font-size: 12px; font-weight: 500;
+  color: var(--text3); background: var(--surface2); border-radius: 999px; cursor: pointer;
+}
+.log-source-tab.active { color: #fff; background: var(--accent); }
+.qty-preview {
+  background: var(--surface2); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 14px;
+  display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2);
+}
+.qty-preview b { color: var(--text); font-weight: 600; }
+.qty-preview .qp-kcal { width: 100%; font-size: 20px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+.qty-stepper { display: flex; align-items: center; gap: 8px; }
+.qty-stepper button {
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface2); font-size: 20px; color: var(--text); cursor: pointer; flex-shrink: 0;
+}
+.qty-stepper input {
+  flex: 1; text-align: center; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 9px; font-size: 16px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text);
+}
+.pick-macros { font-size: 11px; color: var(--text3); }
+
+/* ═══════════════ SCANNER ═══════════════ */
+.scanner-viewport {
+  position: relative; width: 100%; aspect-ratio: 4/3; background: #000;
+  border-radius: var(--radius); overflow: hidden; margin-bottom: 12px;
+}
+.scanner-viewport video { width: 100%; height: 100%; object-fit: cover; }
+.scanner-reticle {
+  position: absolute; inset: 22% 12%; border: 2px solid rgba(255,255,255,0.9);
+  border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0,0,0,0.35);
+}
+.scanner-status { font-size: 12px; color: var(--text2); text-align: center; min-height: 18px; margin-bottom: 12px; }
+.scanner-manual { display: flex; gap: 8px; }
+.scanner-manual input {
+  flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+  font-size: 14px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text);
+}
+.scan-product {
+  display: flex; gap: 12px; align-items: center; background: var(--surface2);
+  border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;
+}
+.scan-product img { width: 56px; height: 56px; object-fit: contain; border-radius: 8px; background: #fff; flex-shrink: 0; }
+.scan-product .sp-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.scan-product .sp-brand { font-size: 11px; color: var(--text3); }
+
+/* ═══════════════ RECOMMENDATIONS ═══════════════ */
+.rec-item {
+  display: flex; align-items: center; gap: 12px; padding: 11px 12px; margin-bottom: 8px;
+  background: var(--surface2); border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid transparent; transition: border-color 0.15s;
+}
+.rec-item:active { border-color: var(--accent); }
+.rec-item .ri-emoji { font-size: 24px; width: 30px; text-align: center; }
+.rec-item .ri-main { flex: 1; min-width: 0; }
+.rec-item .ri-name { font-size: 14px; font-weight: 500; color: var(--text); }
+.rec-item .ri-why { font-size: 11px; color: var(--accent); }
+.rec-item .ri-macros { font-size: 11px; color: var(--text3); }
+.rec-item .ri-add { font-size: 22px; color: var(--accent); font-weight: 300; }
+.rec-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 24px 12px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -771,7 +926,10 @@ body {
 
 <!-- TAB BAR -->
 <div class="tab-bar">
-  <div class="tab-btn active" onclick="switchTab('foods',this)">
+  <div class="tab-btn active" onclick="switchTab('today',this)">
+    <span class="tab-icon">🍎</span>Today
+  </div>
+  <div class="tab-btn" onclick="switchTab('foods',this)">
     <span class="tab-icon">🥗</span>Foods
   </div>
   <div class="tab-btn" onclick="switchTab('builder',this)">
@@ -781,12 +939,85 @@ body {
     <span class="tab-icon">📅</span>Plan
   </div>
   <div class="tab-btn" onclick="switchTab('history',this)">
-    <span class="tab-icon">📈</span>History
+    <span class="tab-icon">📈</span>Trends
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ TODAY / DIARY SCREEN -->
+<div class="screen active" id="screen-today">
+  <div class="diary-wrap">
+    <!-- Date navigator -->
+    <div class="diary-datebar">
+      <div class="week-nav-btn" onclick="changeDiaryDate(-1)">‹</div>
+      <div class="diary-date" onclick="goToday()">
+        <span id="diary-date-label">Today</span>
+        <span id="diary-date-sub"></span>
+      </div>
+      <div class="week-nav-btn" onclick="changeDiaryDate(1)">›</div>
+    </div>
+
+    <!-- Calorie budget card -->
+    <div class="budget-card">
+      <div class="budget-ring-wrap">
+        <svg class="budget-ring" viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+          <circle class="ring-fill" id="budget-ring-fill" cx="60" cy="60" r="52"></circle>
+        </svg>
+        <div class="budget-ring-center">
+          <div class="budget-remaining" id="budget-remaining">0</div>
+          <div class="budget-remaining-lbl" id="budget-remaining-lbl">remaining</div>
+        </div>
+      </div>
+      <div class="budget-breakdown">
+        <div class="bd-row"><span class="bd-dot goal"></span><span class="bd-lbl">Goal</span><span class="bd-val" id="bd-goal">0</span></div>
+        <div class="bd-row"><span class="bd-op">−</span><span class="bd-lbl">Food</span><span class="bd-val" id="bd-food">0</span></div>
+        <div class="bd-row"><span class="bd-op">+</span><span class="bd-lbl">Exercise</span><span class="bd-val" id="bd-exercise">0</span></div>
+        <div class="bd-row bd-total"><span class="bd-op">=</span><span class="bd-lbl">Remaining</span><span class="bd-val" id="bd-remaining">0</span></div>
+      </div>
+    </div>
+
+    <!-- Macro progress -->
+    <div class="macro-cards" style="margin:0 16px 6px;">
+      <div class="macro-card">
+        <div class="mc-val"><span id="d-protein">0</span><span class="mc-unit">g</span></div>
+        <div class="mc-target" id="d-protein-target">/ — protein</div>
+        <div class="mc-bar"><div class="mc-fill protein" id="d-protein-bar" style="width:0%"></div></div>
+      </div>
+      <div class="macro-card">
+        <div class="mc-val"><span id="d-carbs">0</span><span class="mc-unit">g</span></div>
+        <div class="mc-target" id="d-carbs-target">/ — carbs</div>
+        <div class="mc-bar"><div class="mc-fill carbs" id="d-carbs-bar" style="width:0%"></div></div>
+      </div>
+      <div class="macro-card">
+        <div class="mc-val"><span id="d-fat">0</span><span class="mc-unit">g</span></div>
+        <div class="mc-target" id="d-fat-target">/ — fat</div>
+        <div class="mc-bar"><div class="mc-fill fat" id="d-fat-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <!-- Fitbit strip -->
+    <div class="fitbit-strip" id="fitbit-strip" style="display:none;" onclick="syncFitbitToday(true)">
+      <span class="fb-icon">⌚</span>
+      <span class="fb-stat"><b id="fb-steps">—</b> steps</span>
+      <span class="fb-stat"><b id="fb-cals">—</b> cal burned</span>
+      <span class="fb-sync" id="fb-sync-hint">tap to sync</span>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="diary-actions">
+      <button class="diary-action" onclick="openScanner()"><span class="da-ic">📷</span>Scan barcode</button>
+      <button class="diary-action" onclick="openRecommend()"><span class="da-ic">✨</span>Recommend foods</button>
+    </div>
+
+    <!-- Meal sections -->
+    <div id="diary-meals"></div>
+
+    <div style="height:24px;"></div>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════ FOODS SCREEN -->
-<div class="screen active" id="screen-foods">
+<div class="screen" id="screen-foods">
   <div id="swipe-view">
     <div class="swipe-container">
       <div class="rated-bar-wrap">
@@ -1073,6 +1304,29 @@ body {
     </div>
 
     <div class="settings-section">
+      <div class="settings-label">Fitbit</div>
+      <div id="fitbit-connected" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
+          <span style="font-size:16px;">✅</span>
+          <div>Connected to Fitbit<div id="fitbit-expiry" style="font-size:11px;color:var(--text2);"></div></div>
+        </div>
+        <div class="export-grid">
+          <div class="export-btn" onclick="syncFitbitToday(true)"><span class="eicon">🔄</span>Sync now</div>
+          <div class="export-btn" onclick="disconnectFitbit()"><span class="eicon">🔌</span>Disconnect</div>
+        </div>
+      </div>
+      <div id="fitbit-disconnected">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Sync steps, calories burned and weight from Fitbit to adjust your daily calorie budget. Enter your Fitbit app's OAuth 2.0 <b>Client ID</b> (register a free app at dev.fitbit.com — set redirect URL to this page's address and OAuth type to <b>Client / Implicit Grant</b>).</p>
+        <div class="settings-row">
+          <label>Client ID</label>
+          <input type="text" id="fitbit-client-id" placeholder="23ABCD" style="width:120px;" onchange="saveFitbitClientId()">
+        </div>
+        <button class="btn-primary" style="margin-top:10px;" onclick="connectFitbit()">Connect Fitbit</button>
+        <div id="fitbit-redirect-hint" style="font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;"></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-label">Danger zone</div>
       <button class="btn-secondary" style="color:var(--warn);border-color:var(--warn);" onclick="resetAll()">Reset all data</button>
     </div>
@@ -1265,6 +1519,88 @@ body {
       <button class="btn-secondary" style="flex:1;" onclick="addRecipeAsMeal()">Use as whole meal</button>
     </div>
     <button class="btn-secondary" style="margin-top:8px;color:var(--warn);border-color:var(--warn);" onclick="deleteRecipeFromView()">Delete recipe</button>
+  </div>
+</div>
+
+<!-- LOG FOOD MODAL (add to diary) -->
+<div class="modal-overlay" id="log-food-modal" onclick="overlayClick(event,'log-food-modal')">
+  <div class="modal" style="max-height:90dvh;overflow-y:auto;">
+    <div class="modal-title" id="log-food-title">Add to Breakfast</div>
+    <div class="log-source-tabs">
+      <div class="log-source-tab active" onclick="logSourceTab('search',this)">Foods</div>
+      <div class="log-source-tab" onclick="logSourceTab('meals',this)">Meals</div>
+      <div class="log-source-tab" onclick="logSourceTab('recipes',this)">Recipes</div>
+    </div>
+    <div id="log-search-pane">
+      <input type="text" class="food-search" id="log-search-input" placeholder="Search foods, or scan a barcode…" oninput="renderLogSearch()">
+      <button class="btn-secondary" style="margin:8px 0 4px;" onclick="openScanner()">📷 Scan a barcode</button>
+      <div class="food-pick-list" id="log-search-list"></div>
+    </div>
+    <div id="log-meals-pane" style="display:none;">
+      <div class="food-pick-list" id="log-meals-list"></div>
+    </div>
+    <div id="log-recipes-pane" style="display:none;">
+      <div class="food-pick-list" id="log-recipes-list"></div>
+    </div>
+    <button class="btn-secondary" onclick="closeModal('log-food-modal')" style="margin-top:12px;">Cancel</button>
+  </div>
+</div>
+
+<!-- QUANTITY / CONFIRM LOG MODAL -->
+<div class="modal-overlay" id="qty-modal" onclick="overlayClick(event,'qty-modal')">
+  <div class="modal">
+    <div class="modal-title" id="qty-title">Add food</div>
+    <div id="qty-macro-preview" class="qty-preview"></div>
+    <div class="form-group">
+      <label>Number of servings <span id="qty-serving-hint" style="color:var(--text3);font-weight:400;"></span></label>
+      <div class="qty-stepper">
+        <button onclick="qtyStep(-1)">−</button>
+        <input type="number" id="qty-input" value="1" min="0.25" step="0.25" oninput="renderQtyPreview()">
+        <button onclick="qtyStep(1)">+</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Meal</label>
+      <select id="qty-slot" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+        <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
+      </select>
+    </div>
+    <button class="btn-primary" onclick="confirmLog()">Add to diary</button>
+    <button class="btn-secondary" onclick="closeModal('qty-modal')">Cancel</button>
+  </div>
+</div>
+
+<!-- BARCODE SCANNER MODAL -->
+<div class="modal-overlay" id="scanner-modal" onclick="overlayClick(event,'scanner-modal')">
+  <div class="modal" style="max-height:92dvh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <div class="modal-title" style="margin:0;">Scan barcode</div>
+      <button class="drawer-close" onclick="closeScanner()">✕</button>
+    </div>
+    <div id="scanner-stage">
+      <div class="scanner-viewport">
+        <video id="scanner-video" playsinline muted></video>
+        <div class="scanner-reticle"></div>
+      </div>
+      <div id="scanner-status" class="scanner-status">Point your camera at a product barcode…</div>
+      <div class="scanner-manual">
+        <input type="text" id="scanner-manual-input" inputmode="numeric" placeholder="…or type the barcode number">
+        <button class="save-meal-btn" onclick="lookupManualBarcode()">Look up</button>
+      </div>
+    </div>
+    <div id="scanner-result" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- RECOMMENDATIONS MODAL -->
+<div class="modal-overlay" id="recommend-modal" onclick="overlayClick(event,'recommend-modal')">
+  <div class="modal" style="max-height:90dvh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <div class="modal-title" style="margin:0;">Recommended for you</div>
+      <button class="drawer-close" onclick="closeModal('recommend-modal')">✕</button>
+    </div>
+    <p id="recommend-sub" style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;"></p>
+    <div id="recommend-list"></div>
   </div>
 </div>
 
@@ -3180,6 +3516,484 @@ renderSwipeCard();
 updateTargetDisplay();
 renderMFPSummary();
 gdriveFileId = localStorage.getItem('plateiq_gdrive_file_id') || null;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  DIARY / TRACKER · BARCODE SCAN · FITBIT · RECOMMENDATIONS · PWA
+// ════════════════════════════════════════════════════════════════════════════
+const MEAL_SECTIONS = ['Breakfast','Lunch','Dinner','Snacks'];
+let diaryDate = new Date();
+let pendingLog = null;
+let logTargetSlot = 'Breakfast';
+const fbSyncing = new Set();
+
+function ensureDataModel() {
+  if (!state.diary) state.diary = {};
+  if (!state.fitbit) state.fitbit = { clientId: '', token: null, expiresAt: 0, userId: null };
+  if (!state.fitbitDaily) state.fitbitDaily = {};
+}
+function dkey(d) {
+  const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return z.toISOString().slice(0, 10);
+}
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtQty(q) { return Number.isInteger(q) ? String(q) : String(Math.round(q * 100) / 100); }
+function openModalById(id) { document.getElementById(id).classList.add('open'); }
+function defaultSlot() { const h = new Date().getHours(); if (h < 11) return 'Breakfast'; if (h < 16) return 'Lunch'; if (h < 21) return 'Dinner'; return 'Snacks'; }
+
+// ── Diary rendering ──────────────────────────────────────────────────────────
+function diaryTotals(key) {
+  const d = state.diary[key];
+  const t = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+  if (d) d.entries.forEach(e => { t.kcal += e.kcal * e.qty; t.protein += e.protein * e.qty; t.carbs += e.carbs * e.qty; t.fat += e.fat * e.qty; });
+  return { kcal: Math.round(t.kcal), protein: Math.round(t.protein), carbs: Math.round(t.carbs), fat: Math.round(t.fat) };
+}
+function changeDiaryDate(delta) { diaryDate.setDate(diaryDate.getDate() + delta); renderDiary(); }
+function goToday() { diaryDate = new Date(); renderDiary(); }
+
+function renderDiary() {
+  ensureDataModel();
+  const key = dkey(diaryDate);
+  const today = dkey(new Date());
+  const yest = dkey(new Date(Date.now() - 864e5));
+  const lbl = document.getElementById('diary-date-label');
+  const sub = document.getElementById('diary-date-sub');
+  if (key === today) lbl.textContent = 'Today';
+  else if (key === yest) lbl.textContent = 'Yesterday';
+  else lbl.textContent = diaryDate.toLocaleDateString(undefined, { weekday: 'long' });
+  sub.textContent = diaryDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const t = calcTDEE();
+  const tot = diaryTotals(key);
+  const fb = state.fitbitDaily[key];
+  const exercise = fb && fb.exerciseCals ? fb.exerciseCals : 0;
+  const goal = t.kcal;
+  const remaining = goal - tot.kcal + exercise;
+
+  document.getElementById('bd-goal').textContent = goal.toLocaleString();
+  document.getElementById('bd-food').textContent = tot.kcal.toLocaleString();
+  document.getElementById('bd-exercise').textContent = exercise.toLocaleString();
+  document.getElementById('bd-remaining').textContent = remaining.toLocaleString();
+  document.getElementById('budget-remaining').textContent = Math.abs(remaining).toLocaleString();
+  document.getElementById('budget-remaining-lbl').textContent = remaining >= 0 ? 'remaining' : 'over';
+
+  const budget = goal + exercise;
+  const frac = budget > 0 ? Math.min(1, tot.kcal / budget) : 0;
+  const ring = document.getElementById('budget-ring-fill');
+  ring.style.strokeDashoffset = (327 * (1 - frac)).toFixed(1);
+  ring.style.stroke = remaining < 0 ? 'var(--warn)' : 'var(--accent)';
+
+  setDiaryMacro('d-protein', tot.protein, t.protein, 'protein');
+  setDiaryMacro('d-carbs', tot.carbs, t.carbs, 'carbs');
+  setDiaryMacro('d-fat', tot.fat, t.fat, 'fat');
+
+  renderFitbitStrip(key);
+  renderDiaryMeals(key);
+
+  if (fitbitValid() && !state.fitbitDaily[key] && !fbSyncing.has(key)) {
+    fbSyncing.add(key);
+    syncFitbit(key).then(() => { fbSyncing.delete(key); if (dkey(diaryDate) === key) renderDiary(); });
+  }
+}
+function setDiaryMacro(prefix, val, target, label) {
+  document.getElementById(prefix).textContent = val;
+  document.getElementById(prefix + '-target').textContent = '/ ' + target + 'g ' + label;
+  const bar = document.getElementById(prefix + '-bar');
+  bar.style.width = Math.min(100, target ? (val / target * 100) : 0) + '%';
+}
+function renderDiaryMeals(key) {
+  const container = document.getElementById('diary-meals');
+  const d = state.diary[key];
+  container.innerHTML = MEAL_SECTIONS.map(slot => {
+    const entries = d ? d.entries.filter(e => e.slot === slot) : [];
+    const kcal = Math.round(entries.reduce((s, e) => s + e.kcal * e.qty, 0));
+    const rows = entries.map(e => {
+      const ek = Math.round(e.kcal * e.qty);
+      const qtyLabel = e.qty !== 1 ? (fmtQty(e.qty) + '× ') : '';
+      return `<div class="diary-entry">
+        <span class="de-emoji">${e.emoji || '🍽️'}</span>
+        <div class="de-main"><div class="de-name">${escapeHtml(e.name)}</div>
+          <div class="de-sub">${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)}</div></div>
+        <span class="de-kcal">${ek}</span>
+        <span class="de-del" onclick="removeDiaryEntry('${key}','${e.id}')">✕</span>
+      </div>`;
+    }).join('');
+    return `<div class="diary-meal">
+      <div class="diary-meal-head"><span class="dm-name">${slot}</span><span class="dm-kcal">${kcal} kcal</span></div>
+      ${rows}
+      <button class="diary-add-btn" onclick="openLogModal('${slot}')">＋ Add food</button>
+    </div>`;
+  }).join('');
+}
+function removeDiaryEntry(key, id) {
+  const d = state.diary[key]; if (!d) return;
+  d.entries = d.entries.filter(e => e.id !== id);
+  saveState(); renderDiary();
+}
+
+// ── Log flow ─────────────────────────────────────────────────────────────────
+function openLogModal(slot) {
+  logTargetSlot = slot || defaultSlot();
+  document.getElementById('log-food-title').textContent = 'Add to ' + logTargetSlot;
+  document.getElementById('log-search-input').value = '';
+  logSourceTab('search');
+  openModalById('log-food-modal');
+}
+function logSourceTab(which, el) {
+  document.querySelectorAll('.log-source-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  else { const tabs = document.querySelectorAll('.log-source-tab'); if (tabs[0]) tabs[0].classList.add('active'); }
+  document.getElementById('log-search-pane').style.display = which === 'search' ? 'block' : 'none';
+  document.getElementById('log-meals-pane').style.display = which === 'meals' ? 'block' : 'none';
+  document.getElementById('log-recipes-pane').style.display = which === 'recipes' ? 'block' : 'none';
+  if (which === 'search') renderLogSearch();
+  else if (which === 'meals') renderLogMeals();
+  else if (which === 'recipes') renderLogRecipes();
+}
+function pickRow(onclick, emoji, name, macros) {
+  return `<div class="food-pick-item" onclick="${onclick}">
+    <span class="fpi-emoji">${emoji}</span>
+    <div class="fpi-info"><div class="fpi-name">${escapeHtml(name)}</div><div class="fpi-macros">${macros}</div></div>
+    <span class="fpi-add">+</span></div>`;
+}
+function renderLogSearch() {
+  const q = (document.getElementById('log-search-input').value || '').toLowerCase().trim();
+  let foods = allFoods().filter(f => !q || f.name.toLowerCase().includes(q));
+  foods.sort((a, b) => (state.ratings[b.id] === 'yes' ? 1 : 0) - (state.ratings[a.id] === 'yes' ? 1 : 0));
+  const list = document.getElementById('log-search-list');
+  list.innerHTML = foods.slice(0, 80).map(f =>
+    pickRow(`logFood('${f.id}')`, f.emoji || '🍽️', f.name, `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`)
+  ).join('') || '<div class="rec-empty">No matches. Try scanning a barcode above.</div>';
+}
+function renderLogMeals() {
+  const meals = state.savedMeals || [];
+  document.getElementById('log-meals-list').innerHTML = meals.length
+    ? meals.map((m, i) => pickRow(`logMeal(${i})`, '🍽️', m.name, `${m.kcal} kcal · P${m.protein} C${m.carbs} F${m.fat}`)).join('')
+    : '<div class="rec-empty">No saved meals yet. Build one in the Meal tab.</div>';
+}
+function renderLogRecipes() {
+  const recs = state.recipes || [];
+  document.getElementById('log-recipes-list').innerHTML = recs.length
+    ? recs.map(r => pickRow(`logRecipe('${r.id}')`, '📖', r.name, `${r.kcal || 0} kcal · P${r.protein || 0} C${r.carbs || 0} F${r.fat || 0} · per serving`)).join('')
+    : '<div class="rec-empty">No recipes yet. Add one in Meal → Recipes.</div>';
+}
+function logFood(id) {
+  const f = getFood(id); if (!f) return;
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, defaultQty: 1 });
+}
+function logMeal(i) {
+  const m = state.savedMeals[i]; if (!m) return;
+  openQtyModal({ kind: 'meal', refId: m.id, name: m.name, emoji: '🍽️', serving: '1 meal', kcal: m.kcal, protein: m.protein, carbs: m.carbs, fat: m.fat, defaultQty: 1 });
+}
+function logRecipe(id) {
+  const r = state.recipes.find(x => x.id === id); if (!r) return;
+  openQtyModal({ kind: 'recipe', refId: r.id, name: r.name, emoji: '📖', serving: '1 serving', kcal: r.kcal || 0, protein: r.protein || 0, carbs: r.carbs || 0, fat: r.fat || 0, defaultQty: 1 });
+}
+function openQtyModal(item) {
+  pendingLog = item;
+  document.getElementById('qty-title').textContent = item.name;
+  document.getElementById('qty-input').value = item.defaultQty || 1;
+  document.getElementById('qty-serving-hint').textContent = item.serving ? ('· ' + item.serving + ' each') : '';
+  document.getElementById('qty-slot').value = logTargetSlot || defaultSlot();
+  renderQtyPreview();
+  openModalById('qty-modal');
+}
+function qtyStep(dir) {
+  const inp = document.getElementById('qty-input');
+  let v = (parseFloat(inp.value) || 0) + dir * 0.5;
+  if (v < 0.25) v = 0.25;
+  inp.value = Math.round(v * 100) / 100;
+  renderQtyPreview();
+}
+function renderQtyPreview() {
+  const q = Math.max(0, parseFloat(document.getElementById('qty-input').value) || 0);
+  const p = pendingLog; if (!p) return;
+  document.getElementById('qty-macro-preview').innerHTML =
+    `<span class="qp-kcal">${Math.round(p.kcal * q)} kcal</span>` +
+    `<span>Protein <b>${Math.round(p.protein * q)}g</b></span>` +
+    `<span>Carbs <b>${Math.round(p.carbs * q)}g</b></span>` +
+    `<span>Fat <b>${Math.round(p.fat * q)}g</b></span>`;
+}
+function confirmLog() {
+  const p = pendingLog; if (!p) return;
+  const qty = Math.max(0.25, parseFloat(document.getElementById('qty-input').value) || 1);
+  const slot = document.getElementById('qty-slot').value;
+  const key = dkey(diaryDate);
+  ensureDataModel();
+  if (!state.diary[key]) state.diary[key] = { entries: [] };
+  state.diary[key].entries.push({
+    id: 'e' + Date.now() + Math.round(Math.random() * 9999),
+    kind: p.kind, refId: p.refId || null, name: p.name, emoji: p.emoji || '🍽️',
+    slot, qty, serving: p.serving || '',
+    kcal: p.kcal, protein: p.protein, carbs: p.carbs, fat: p.fat
+  });
+  saveState();
+  closeModal('qty-modal'); closeModal('log-food-modal'); closeModal('recommend-modal');
+  toast('Logged to ' + slot);
+  renderDiary();
+}
+
+// ── Barcode scanning + Open Food Facts ───────────────────────────────────────
+let scanStream = null, scanDetector = null, scanRAF = null, scanning = false;
+function num(x) { const v = parseFloat(x); return isFinite(v) ? v : 0; }
+async function openScanner() {
+  logTargetSlot = logTargetSlot || defaultSlot();
+  document.getElementById('scanner-result').style.display = 'none';
+  document.getElementById('scanner-stage').style.display = 'block';
+  document.getElementById('scanner-manual-input').value = '';
+  openModalById('scanner-modal');
+  const statusEl = document.getElementById('scanner-status');
+  if (!('BarcodeDetector' in window)) {
+    statusEl.textContent = 'Live scanning isn’t supported here — type the barcode number below.';
+    return;
+  }
+  try { scanDetector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'] }); }
+  catch (e) { statusEl.textContent = 'Scanner unavailable — type the barcode number below.'; return; }
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = document.getElementById('scanner-video');
+    v.srcObject = scanStream; await v.play();
+    scanning = true; statusEl.textContent = 'Scanning… hold steady over the barcode.';
+    scanLoop();
+  } catch (e) {
+    statusEl.textContent = 'Camera unavailable — type the barcode number below.';
+  }
+}
+async function scanLoop() {
+  if (!scanning) return;
+  const v = document.getElementById('scanner-video');
+  try {
+    const codes = await scanDetector.detect(v);
+    if (codes && codes.length && codes[0].rawValue) {
+      scanning = false;
+      if (navigator.vibrate) navigator.vibrate(60);
+      lookupBarcode(codes[0].rawValue);
+      return;
+    }
+  } catch (e) {}
+  scanRAF = requestAnimationFrame(scanLoop);
+}
+function stopScan() {
+  scanning = false;
+  if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = null; }
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+}
+function closeScanner() { stopScan(); closeModal('scanner-modal'); }
+function lookupManualBarcode() {
+  const code = (document.getElementById('scanner-manual-input').value || '').trim();
+  if (code) lookupBarcode(code);
+}
+async function lookupBarcode(code) {
+  stopScan();
+  const statusEl = document.getElementById('scanner-status');
+  statusEl.textContent = 'Looking up ' + code + '…';
+  try {
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,nutriments,image_small_url,image_front_thumb_url`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (!j || j.status === 0 || !j.product) { showScanNotFound(code); return; }
+    const p = j.product, n = p.nutriments || {};
+    const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
+    const basis = perServing ? '_serving' : '_100g';
+    const kcal = Math.round(num(n['energy-kcal' + basis]) || num(n['energy-kcal_100g']));
+    const protein = Math.round(num(n['proteins' + basis]));
+    const carbs = Math.round(num(n['carbohydrates' + basis]));
+    const fat = Math.round(num(n['fat' + basis]));
+    const serving = perServing && p.serving_size ? p.serving_size : (perServing ? '1 serving' : '100 g');
+    const name = (p.product_name || 'Scanned item').trim();
+    const fid = 'bc' + code;
+    ensureDataModel();
+    if (!state.customFoods.find(f => f.id === fid)) {
+      state.customFoods.push({ id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code });
+      saveState();
+    }
+    showScanResult({ fid, name, brand: p.brands || '', img: p.image_small_url || p.image_front_thumb_url || '', serving, kcal, protein, carbs, fat });
+  } catch (e) {
+    statusEl.textContent = 'Lookup failed (offline?). Check your connection or type the number again.';
+  }
+}
+function showScanResult(p) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  const el = document.getElementById('scanner-result'); el.style.display = 'block';
+  el.innerHTML = `<div class="scan-product">
+      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
+      <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} kcal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
+    </div>
+    <button class="btn-primary" onclick="logScanned('${p.fid}')">Add to diary</button>
+    <button class="btn-secondary" onclick="openScanner()">Scan another</button>`;
+}
+function showScanNotFound(code) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  const el = document.getElementById('scanner-result'); el.style.display = 'block';
+  el.innerHTML = `<div class="rec-empty">No product found for <b>${escapeHtml(code)}</b> in Open Food Facts.<br><br>You can add it as a custom food instead.</div>
+    <button class="btn-secondary" onclick="openScanner()">Try another barcode</button>
+    <button class="btn-secondary" onclick="closeScanner();openAddFood();">Add manually</button>`;
+}
+function logScanned(fid) { closeScanner(); logFood(fid); }
+
+// ── Fitbit (OAuth 2.0 implicit grant, client-side) ───────────────────────────
+const FITBIT_SCOPES = 'activity profile weight nutrition';
+function fitbitRedirectUri() { return location.origin + location.pathname; }
+function fitbitValid() { ensureDataModel(); return !!(state.fitbit.token && Date.now() < state.fitbit.expiresAt); }
+function saveFitbitClientId() { ensureDataModel(); state.fitbit.clientId = (document.getElementById('fitbit-client-id').value || '').trim(); saveState(); }
+function connectFitbit() {
+  ensureDataModel();
+  const cid = (document.getElementById('fitbit-client-id').value || '').trim();
+  if (!cid) { toast('Enter your Fitbit Client ID first'); return; }
+  state.fitbit.clientId = cid; saveState();
+  const params = new URLSearchParams({
+    response_type: 'token', client_id: cid, scope: FITBIT_SCOPES,
+    redirect_uri: fitbitRedirectUri(), expires_in: '604800'
+  });
+  location.href = 'https://www.fitbit.com/oauth2/authorize?' + params.toString();
+}
+function handleFitbitRedirect() {
+  if (!location.hash || location.hash.indexOf('access_token=') < 0) return false;
+  const h = new URLSearchParams(location.hash.slice(1));
+  const token = h.get('access_token');
+  if (!token) return false;
+  ensureDataModel();
+  state.fitbit.token = token;
+  state.fitbit.userId = h.get('user_id') || null;
+  const expiresIn = parseInt(h.get('expires_in') || '604800', 10);
+  state.fitbit.expiresAt = Date.now() + expiresIn * 1000;
+  saveState();
+  history.replaceState(null, '', location.pathname + location.search);
+  return true;
+}
+async function syncFitbit(keyStr) {
+  if (!fitbitValid()) return null;
+  try {
+    const r = await fetch(`https://api.fitbit.com/1/user/-/activities/date/${keyStr}.json`, { headers: { Authorization: 'Bearer ' + state.fitbit.token } });
+    if (r.status === 401) { state.fitbit.token = null; saveState(); renderFitbitSettings(); toast('Fitbit session expired — reconnect'); return null; }
+    const j = await r.json();
+    const s = j.summary || {};
+    ensureDataModel();
+    state.fitbitDaily[keyStr] = {
+      caloriesOut: Math.round(s.caloriesOut || 0),
+      exerciseCals: Math.round(s.activityCalories || 0),
+      steps: Math.round(s.steps || 0),
+      syncedAt: Date.now()
+    };
+    saveState();
+    return state.fitbitDaily[keyStr];
+  } catch (e) { return null; }
+}
+async function syncFitbitToday(force) {
+  if (!fitbitValid()) { if (force) toast('Connect Fitbit in settings first'); return; }
+  const keyStr = dkey(diaryDate);
+  const hint = document.getElementById('fb-sync-hint'); if (hint) hint.textContent = 'syncing…';
+  await syncFitbit(keyStr);
+  renderDiary();
+}
+function renderFitbitStrip(keyStr) {
+  const strip = document.getElementById('fitbit-strip');
+  if (!fitbitValid()) { strip.style.display = 'none'; return; }
+  strip.style.display = 'flex';
+  const fb = state.fitbitDaily[keyStr];
+  document.getElementById('fb-steps').textContent = fb && fb.steps != null ? fb.steps.toLocaleString() : '—';
+  document.getElementById('fb-cals').textContent = fb && fb.exerciseCals != null ? fb.exerciseCals.toLocaleString() : '—';
+  document.getElementById('fb-sync-hint').textContent = fb ? 'tap to refresh' : 'tap to sync';
+}
+function renderFitbitSettings() {
+  ensureDataModel();
+  const conn = fitbitValid();
+  document.getElementById('fitbit-connected').style.display = conn ? 'block' : 'none';
+  document.getElementById('fitbit-disconnected').style.display = conn ? 'none' : 'block';
+  document.getElementById('fitbit-client-id').value = state.fitbit.clientId || '';
+  document.getElementById('fitbit-redirect-hint').textContent = 'Redirect URL to register at dev.fitbit.com: ' + fitbitRedirectUri();
+  if (conn) document.getElementById('fitbit-expiry').textContent = 'Access expires ' + new Date(state.fitbit.expiresAt).toLocaleDateString();
+}
+function disconnectFitbit() {
+  ensureDataModel();
+  state.fitbit.token = null; state.fitbit.expiresAt = 0;
+  saveState(); renderFitbitSettings(); renderDiary();
+  toast('Fitbit disconnected');
+}
+
+// ── Recommendations ──────────────────────────────────────────────────────────
+function openRecommend() {
+  logTargetSlot = defaultSlot();
+  const key = dkey(diaryDate);
+  const t = calcTDEE();
+  const tot = diaryTotals(key);
+  const fb = state.fitbitDaily[key];
+  const ex = fb && fb.exerciseCals ? fb.exerciseCals : 0;
+  const remKcal = t.kcal + ex - tot.kcal;
+  const remP = t.protein - tot.protein, remC = t.carbs - tot.carbs, remF = t.fat - tot.fat;
+  const sub = document.getElementById('recommend-sub');
+  const list = document.getElementById('recommend-list');
+  sub.innerHTML = `About <b>${Math.max(0, Math.round(remKcal))} kcal</b> left today — still need roughly <b>${Math.max(0, remP)}g</b> protein, <b>${Math.max(0, remC)}g</b> carbs, <b>${Math.max(0, remF)}g</b> fat.`;
+
+  if (remKcal <= 40 && remP <= 3 && remC <= 5 && remF <= 2) {
+    list.innerHTML = '<div class="rec-empty">🎉 You’ve essentially hit your targets for the day. Nice work!</div>';
+    openModalById('recommend-modal'); return;
+  }
+  const needP = Math.max(0, remP), needC = Math.max(0, remC), needF = Math.max(0, remF);
+  const totalNeed = needP + needC + needF || 1;
+  const wP = needP / totalNeed, wC = needC / totalNeed, wF = needF / totalNeed;
+  let pool = acceptedFoods();
+  if (pool.length < 5) pool = allFoods();
+  const scored = pool.filter(f => f.kcal > 0).map(f => {
+    let score = f.protein * wP + f.carbs * wC + f.fat * wF;
+    if (remKcal > 0 && f.kcal > remKcal) score /= (1 + (f.kcal - remKcal) / Math.max(remKcal, 50));
+    return { f, score };
+  }).sort((a, b) => b.score - a.score).slice(0, 8);
+
+  list.innerHTML = scored.map(({ f }) => `<div class="rec-item" onclick="logFood('${f.id}')">
+      <span class="ri-emoji">${f.emoji || '🍽️'}</span>
+      <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
+        <div class="ri-why">${recWhy(f, wP, wC, wF)}</div>
+        <div class="ri-macros">${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
+      <span class="ri-add">＋</span></div>`).join('')
+    || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>';
+  openModalById('recommend-modal');
+}
+function recWhy(f, wP, wC, wF) {
+  const c = [['protein', f.protein * wP, `${f.protein}g protein`], ['carbs', f.carbs * wC, `${f.carbs}g carbs`], ['fat', f.fat * wF, `${f.fat}g fat`]].sort((a, b) => b[1] - a[1]);
+  return 'Helps fill your ' + c[0][2];
+}
+
+// ── Override navigation / overlays to wire in the new screens ────────────────
+switchTab = function (id, el) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+  const scr = document.getElementById('screen-' + id); if (scr) scr.classList.add('active');
+  if (el) el.classList.add('active');
+  if (id === 'today') renderDiary();
+  else if (id === 'foods') renderSwipeCard();
+  else if (id === 'builder') renderBuilder();
+  else if (id === 'planner') renderPlanner();
+  else if (id === 'history') renderHistory();
+  window.scrollTo(0, 0);
+};
+const _origOverlayClick = overlayClick;
+overlayClick = function (e, id) {
+  if (e.target === document.getElementById(id)) {
+    if (id === 'scanner-modal') stopScan();
+    document.getElementById(id).classList.remove('open');
+  }
+};
+const _origOpenSettings = openSettings;
+openSettings = function () { _origOpenSettings(); renderFitbitSettings(); };
+const _origCloseSettings = closeSettings;
+closeSettings = function () {
+  _origCloseSettings();
+  if (document.getElementById('screen-today').classList.contains('active')) renderDiary();
+};
+
+// ── PWA service worker ───────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+
+// ── Boot the tracker layer ───────────────────────────────────────────────────
+ensureDataModel();
+if (handleFitbitRedirect()) { /* returned from Fitbit auth */ }
+renderFitbitSettings();
+renderDiary();
 </script>
 </body>
 </html>

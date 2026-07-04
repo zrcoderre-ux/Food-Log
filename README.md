@@ -95,6 +95,23 @@ PlateIQ pulls these steps on each sync and reconciles them with Fitbit: Fitbit
 stays primary, and Apple Health only fills in steps/calories the watch missed —
 so nothing is ever double-counted.
 
+## Food data sources
+
+Name search queries **Open Food Facts** (millions of mostly packaged/branded
+products) with no setup. For high-quality *whole-food* data (e.g. "chicken
+breast"), optionally add **USDA FoodData Central**: get a free API key at
+<https://fdc.nal.usda.gov/api-key-signup.html> and paste it into Settings →
+Food database (USDA). USDA results then appear first, alongside Open Food Facts.
+Barcode/QR scanning uses the native `BarcodeDetector` where available and falls
+back to ZXing (so it works in Safari/iOS), looking products up in Open Food Facts.
+
+## Updates
+
+The app auto-updates: the service worker serves the page **network-first**, so
+an online launch always loads the latest deploy, and a new version reloads
+itself once it activates. No reinstalling. Settings shows the running version
+and a **Check for updates** link.
+
 ## Files
 
 | File | Purpose |

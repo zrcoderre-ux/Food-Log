@@ -1433,11 +1433,22 @@ body {
       </div>
       <div id="sync-signedout">
         <div class="settings-row"><label>Email</label><input type="email" id="sb-email" placeholder="you@email.com" style="width:170px;"></div>
-        <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Email me a sign-in code</button>
-        <p style="font-size:11px;color:var(--text3);margin:10px 0 6px;line-height:1.5;">On a phone the email <b>link</b> opens a different browser and won't sign this app in — instead type the <b>6-digit code</b> from the email here:</p>
+        <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Email me a sign-in link</button>
+        <p style="font-size:12px;color:var(--text2);margin:12px 0 6px;line-height:1.5;"><b>Easiest:</b> in the email, <b>long-press the sign-in link → Copy Link</b>, then paste it here (this signs the app in without opening another browser):</p>
+        <textarea id="sb-link" placeholder="https://…supabase.co/auth/v1/verify?token=…" style="width:100%;height:54px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:12px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;"></textarea>
+        <button class="btn-secondary" style="margin-top:6px;" onclick="verifyPastedLink()">Paste link &amp; sign in</button>
+        <p style="font-size:11px;color:var(--text3);margin:12px 0 6px;line-height:1.5;">Or, if your email shows a 6-digit code, type it:</p>
         <div class="settings-row"><label>Code</label><input type="text" id="sb-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:100px;"></div>
-        <button class="btn-secondary" style="margin-top:8px;" onclick="verifyEmailOtp()">Verify code &amp; sign in</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:10px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
+        <button class="btn-secondary" style="margin-top:8px;" onclick="verifyEmailOtp()">Verify code</button>
+
+        <div class="settings-label" style="margin-top:18px;">Text me a code instead</div>
+        <p style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5;">Requires an SMS provider set up in Supabase → Authentication → Providers → Phone (e.g. Twilio). See README.</p>
+        <div class="settings-row"><label>Phone</label><input type="tel" id="sb-phone" placeholder="+15551234567" style="width:150px;"></div>
+        <button class="btn-secondary" style="margin-top:8px;" onclick="sendPhoneOtp()">Text me a code</button>
+        <div class="settings-row" style="margin-top:8px;"><label>Code</label><input type="text" id="sb-phone-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:100px;"></div>
+        <button class="btn-secondary" style="margin-top:8px;" onclick="verifyPhoneOtp()">Verify &amp; sign in</button>
+
+        <div style="font-size:11px;color:var(--text3);margin-top:14px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
       </div>
       <div id="sync-signedin" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -4618,6 +4629,68 @@ async function verifyEmailOtp() {
     }
   } catch (e) { toast('Verification failed — check your connection'); }
 }
+// Paste the whole magic link (or an already-redirected URL) to sign in in-app.
+async function verifyPastedLink() {
+  ensureDataModel();
+  const raw = (document.getElementById('sb-link').value || '').trim();
+  if (!raw) { toast('Paste the sign-in link from the email'); return; }
+  try {
+    // Already-redirected URL that carries the tokens in its hash/query.
+    if (raw.indexOf('access_token=') >= 0) {
+      const frag = raw.split('#')[1] || raw.split('?')[1] || '';
+      const h = new URLSearchParams(frag);
+      if (h.get('access_token')) {
+        state.sync.access = h.get('access_token');
+        state.sync.refresh = h.get('refresh_token');
+        state.sync.expiresAt = Date.now() + (parseInt(h.get('expires_in') || '3600', 10) * 1000);
+        saveState(); await sbFetchUser(); renderSyncSettings(); toast('Signed in ✓'); syncNow(false); return;
+      }
+    }
+    // Standard verification link: extract the token hash + type and verify.
+    const u = new URL(raw);
+    const th = u.searchParams.get('token') || u.searchParams.get('token_hash');
+    const type = u.searchParams.get('type') || 'magiclink';
+    if (!th) { toast('Couldn’t find a token in that link — copy the whole URL'); return; }
+    const r = await fetch(sbUrl('/auth/v1/verify'), {
+      method: 'POST', headers: sbBaseHeaders(), body: JSON.stringify({ type, token_hash: th })
+    });
+    const j = await r.json();
+    if (r.ok && j.access_token) {
+      applySbSession(j);
+      if (!state.sync.userId) await sbFetchUser();
+      renderSyncSettings(); toast('Signed in ✓'); syncNow(false);
+    } else { toast('Link invalid or expired: ' + (j.msg || j.error_description || j.error || r.status)); }
+  } catch (e) { toast('Couldn’t read that link — copy the entire URL from the email'); }
+}
+// Phone / SMS OTP (needs an SMS provider configured in Supabase).
+async function sendPhoneOtp() {
+  ensureDataModel();
+  const phone = (document.getElementById('sb-phone').value || '').trim();
+  if (!phone) { toast('Enter your phone number with country code, e.g. +1…'); return; }
+  state.sync.phone = phone; saveState();
+  try {
+    const r = await fetch(sbUrl('/auth/v1/otp'), { method: 'POST', headers: sbBaseHeaders(), body: JSON.stringify({ phone }) });
+    if (r.ok) toast('Texting you a 6-digit code…');
+    else { const j = await r.json().catch(() => ({})); toast('SMS failed: ' + (j.msg || j.error_description || r.status)); }
+  } catch (e) { toast('Network error sending SMS'); }
+}
+async function verifyPhoneOtp() {
+  ensureDataModel();
+  const phone = (document.getElementById('sb-phone').value || '').trim() || state.sync.phone;
+  const code = (document.getElementById('sb-phone-code').value || '').trim();
+  if (!phone || !code) { toast('Enter your phone number and the texted code'); return; }
+  try {
+    const r = await fetch(sbUrl('/auth/v1/verify'), {
+      method: 'POST', headers: sbBaseHeaders(), body: JSON.stringify({ type: 'sms', phone, token: code })
+    });
+    const j = await r.json();
+    if (r.ok && j.access_token) {
+      applySbSession(j);
+      if (!state.sync.userId) await sbFetchUser();
+      renderSyncSettings(); toast('Signed in ✓'); syncNow(false);
+    } else { toast('Code invalid or expired: ' + (j.msg || j.error_description || r.status)); }
+  } catch (e) { toast('Verification failed — check your connection'); }
+}
 function applySbSession(j) {
   ensureDataModel();
   state.sync.access = j.access_token;
@@ -5277,7 +5350,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v11 · 2026-07-05';
+const APP_VERSION = 'v12 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

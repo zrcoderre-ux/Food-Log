@@ -1433,8 +1433,11 @@ body {
       </div>
       <div id="sync-signedout">
         <div class="settings-row"><label>Email</label><input type="email" id="sb-email" placeholder="you@email.com" style="width:170px;"></div>
-        <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Send sign-in link</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:8px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
+        <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Email me a sign-in code</button>
+        <p style="font-size:11px;color:var(--text3);margin:10px 0 6px;line-height:1.5;">On a phone the email <b>link</b> opens a different browser and won't sign this app in — instead type the <b>6-digit code</b> from the email here:</p>
+        <div class="settings-row"><label>Code</label><input type="text" id="sb-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:100px;"></div>
+        <button class="btn-secondary" style="margin-top:8px;" onclick="verifyEmailOtp()">Verify code &amp; sign in</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:10px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
       </div>
       <div id="sync-signedin" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -4588,9 +4591,32 @@ async function sendMagicLink() {
       method: 'POST', headers: sbBaseHeaders(),
       body: JSON.stringify({ email, create_user: true })
     });
-    if (r.ok) toast('Check your email for the sign-in link');
+    if (r.ok) toast('Check your email for the 6-digit code');
     else { const j = await r.json().catch(() => ({})); toast('Sign-in failed: ' + (j.msg || j.error_description || r.status)); }
-  } catch (e) { toast('Network error sending link'); }
+  } catch (e) { toast('Network error sending code'); }
+}
+async function verifyEmailOtp() {
+  ensureDataModel();
+  const email = (document.getElementById('sb-email').value || '').trim() || state.sync.email;
+  const code = (document.getElementById('sb-code').value || '').trim();
+  if (!email) { toast('Enter your email first'); return; }
+  if (!code) { toast('Enter the code from your email'); return; }
+  try {
+    const r = await fetch(sbUrl('/auth/v1/verify'), {
+      method: 'POST', headers: sbBaseHeaders(),
+      body: JSON.stringify({ type: 'email', email, token: code })
+    });
+    const j = await r.json();
+    if (r.ok && j.access_token) {
+      applySbSession(j);
+      if (!state.sync.userId) await sbFetchUser();
+      renderSyncSettings();
+      toast('Signed in ✓');
+      syncNow(false);
+    } else {
+      toast('Code invalid or expired: ' + (j.msg || j.error_description || j.error || r.status));
+    }
+  } catch (e) { toast('Verification failed — check your connection'); }
 }
 function applySbSession(j) {
   ensureDataModel();
@@ -5251,7 +5277,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v10 · 2026-07-05';
+const APP_VERSION = 'v11 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

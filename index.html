@@ -4259,11 +4259,27 @@ function renderLogSearch() {
   const seq = ++offSearchSeq;
   offSearchTimer = setTimeout(() => searchDatabases(q, seq), 350);
 }
+// Reconstruct a nutriments object whether the API nests it (cgi/search.pl and
+// the /product barcode endpoint) or flattens it as "nutriments.<key>" (the
+// newer search-a-licious service).
+function offNutriments(p) {
+  if (p.nutriments && typeof p.nutriments === 'object') return p.nutriments;
+  const n = {};
+  Object.keys(p).forEach(k => { if (k.indexOf('nutriments.') === 0) n[k.slice(11)] = p[k]; });
+  return n;
+}
+// Calories from OFF nutriments — prefer kcal, fall back to kJ → kcal so products
+// that only store energy in kilojoules aren't silently dropped from search.
+function offKcalFrom(n, basis) {
+  let k = num(n['energy-kcal' + basis]) || num(n['energy-kcal_100g']) || num(n['energy-kcal_value']);
+  if (!k) { const kj = num(n['energy-kj' + basis]) || num(n['energy-kj_100g']) || num(n['energy' + basis]) || num(n['energy_100g']); if (kj) k = kj / 4.184; }
+  return k;
+}
 function offToFood(p) {
-  const n = p.nutriments || {};
+  const n = offNutriments(p);
   const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
   const basis = perServing ? '_serving' : '_100g';
-  const kcal = Math.round(num(n['energy-kcal' + basis]) || num(n['energy-kcal_100g']));
+  const kcal = Math.round(offKcalFrom(n, basis));
   const protein = Math.round(num(n['proteins' + basis]));
   const carbs = Math.round(num(n['carbohydrates' + basis]));
   const fat = Math.round(num(n['fat' + basis]));
@@ -4273,14 +4289,38 @@ function offToFood(p) {
   return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '' };
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
-async function offSearch(q) {
+// Legacy full-text index. Weak recall on its own, so it's only half the search.
+async function offSearchLegacy(q) {
   const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
-    '&search_simple=1&action=process&json=1&page_size=25&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url';
+    '&search_simple=1&action=process&json=1&page_size=30&sort_by=popularity_key&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url';
   const r = await fetch(url);
   const j = await r.json();
-  return (j.products || [])
-    .filter(p => p.product_name && p.nutriments && (p.nutriments['energy-kcal_100g'] != null || p.nutriments['energy-kcal_serving'] != null))
-    .map(offToFood).filter(f => f.kcal > 0);
+  return j.products || [];
+}
+// Modern search service (search-a-licious): far better recall, so a product you
+// can find by barcode also turns up when you type its name.
+async function offSearchService(q) {
+  const url = 'https://search.openfoodfacts.org/search?q=' + encodeURIComponent(q) +
+    '&page_size=30&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url';
+  const r = await fetch(url);
+  if (!r.ok) return [];
+  const j = await r.json();
+  return j.hits || j.products || [];
+}
+// Query both OFF endpoints, merge, and de-dupe by barcode/id.
+async function offSearch(q) {
+  const [svc, legacy] = await Promise.all([
+    offSearchService(q).catch(() => []),
+    offSearchLegacy(q).catch(() => []),
+  ]);
+  const seen = new Set(), out = [];
+  [...svc, ...legacy].forEach(p => {
+    if (!p || !p.product_name) return;
+    const f = offToFood(p);
+    if (!f.name || !(f.kcal > 0) || seen.has(f.id)) return;
+    seen.add(f.id); out.push(f);
+  });
+  return out;
 }
 function usdaToFood(item) {
   const arr = item.foodNutrients || [];
@@ -5796,7 +5836,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v41 · 2026-07-05';
+const APP_VERSION = 'v42 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

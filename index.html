@@ -1482,10 +1482,13 @@ body {
         </div>
       </div>
       <div id="gh-disconnected">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Fitbit's own API is being retired (Sept 2026) and replaced by the <b>Google Health API</b>. Connect with Google to pull daily <b>steps, active calories, and resting heart rate</b> — including your Fitbit device's, once it's migrated to your Google account. Setup: create a Google Cloud OAuth <b>Web application</b> client, enable the Health API, add this page's origin as an authorized JavaScript origin, add both the <b>activity_and_fitness</b> and <b>health_metrics_and_measurements</b> read scopes on the consent screen, add yourself as a test user, then paste the Client ID (see README).</p>
-        <div class="settings-row"><label>Google Client ID</label><input type="text" id="gh-client-id" placeholder="…apps.googleusercontent.com" style="width:150px;" onchange="saveGoogleClientId()"></div>
-        <button class="btn-primary" style="margin-top:10px;" onclick="connectGoogleHealth()">Connect Google Health</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;">Authorized JavaScript origin to register: <span id="gh-origin"></span></div>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Fitbit's own API is being retired (Sept 2026) and replaced by the <b>Google Health API</b>. Connect with Google to pull daily <b>steps, active calories, and resting heart rate</b> — including your Fitbit device's, once it's migrated to your Google account. The Client ID is built in — just tap connect and approve.</p>
+        <button class="btn-primary" style="margin-top:4px;" onclick="connectGoogleHealth()">Connect Google Health</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:10px;"><a href="#" onclick="toggleGhAdvanced();return false;" style="color:var(--text2);">Advanced: use a different Client ID</a></div>
+        <div id="gh-advanced" style="display:none;margin-top:8px;">
+          <div class="settings-row"><label>Google Client ID</label><input type="text" id="gh-client-id" placeholder="…apps.googleusercontent.com" style="width:150px;" onchange="saveGoogleClientId()"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;">Authorized JavaScript origin to register: <span id="gh-origin"></span></div>
+        </div>
       </div>
     </div>
 
@@ -4276,13 +4279,20 @@ function disconnectFitbit() {
 // Client-side via Google Identity Services (token model — no server secret).
 // Reads the user's daily steps (incl. their Fitbit device data once migrated).
 const GH_SCOPE = 'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly';
+// Built-in OAuth client so Google Health is just a one-tap connect. An OAuth
+// client ID is public by design (it ships in the browser); the security comes
+// from the Authorized JavaScript origins restriction on the Google Cloud side.
+// Override via Advanced to point at your own project.
+const DEFAULT_GH_CLIENT_ID = '235285533777-u7gsdmkvrhugn8ubtqabaj4a1j9gtab4.apps.googleusercontent.com';
 let ghTokenClient = null;
 function ghReady() { return !!(window.google && google.accounts && google.accounts.oauth2); }
 function ghValid() { ensureDataModel(); return !!(state.googleHealth.token && Date.now() < state.googleHealth.expiresAt); }
+function ghClientId() { ensureDataModel(); return (state.googleHealth.clientId || '').trim() || DEFAULT_GH_CLIENT_ID; }
 function saveGoogleClientId() { ensureDataModel(); state.googleHealth.clientId = (document.getElementById('gh-client-id').value || '').trim(); saveState(); }
+function toggleGhAdvanced() { const a = document.getElementById('gh-advanced'); if (a) a.style.display = a.style.display === 'none' ? 'block' : 'none'; }
 function initGhTokenClient() {
   if (!ghReady()) return false;
-  const cid = (state.googleHealth.clientId || '').trim();
+  const cid = ghClientId();
   if (!cid) return false;
   ghTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: cid,
@@ -4303,9 +4313,10 @@ function initGhTokenClient() {
 }
 function connectGoogleHealth() {
   ensureDataModel();
-  const cid = (document.getElementById('gh-client-id').value || '').trim();
-  if (!cid) { toast('Enter your Google OAuth Client ID first'); return; }
-  state.googleHealth.clientId = cid; saveState();
+  const field = document.getElementById('gh-client-id');
+  const typed = field && (field.value || '').trim();
+  if (typed) { state.googleHealth.clientId = typed; saveState(); }
+  if (!ghClientId()) { toast('No Google Client ID configured'); return; }
   if (!ghReady()) { toast('Google sign-in still loading — try again in a moment'); return; }
   if (!ghTokenClient && !initGhTokenClient()) { toast('Couldn’t start Google sign-in'); return; }
   ghTokenClient.requestAccessToken({ prompt: 'consent' });
@@ -5339,7 +5350,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v15 · 2026-07-05';
+const APP_VERSION = 'v16 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

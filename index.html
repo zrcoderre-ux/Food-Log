@@ -217,8 +217,6 @@ body {
 .target-lbl { font-size: 9px; color: var(--text3); margin-top: 2px; }
 
 .export-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-.gdrive-btn { background: #EAF3FB; border-color: #B5D4F4; color: #0C447C; font-size: 12px; }
-.gdrive-btn:active { background: #B5D4F4; }
 .export-btn {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -1369,22 +1367,13 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Backup & export</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Cloud sync already backs up across your devices. Use these for a local copy: <b>Backup</b> saves a JSON file (no passwords/tokens), <b>Restore</b> loads one, and <b>Excel</b> exports your diary, daily totals, steps, energy and micronutrients as a spreadsheet.</p>
       <div class="export-grid">
         <div class="export-btn" onclick="exportJSON()"><span class="eicon">💾</span>Backup</div>
         <div class="export-btn" onclick="importJSON()"><span class="eicon">📂</span>Restore</div>
         <div class="export-btn" onclick="exportXLSX()"><span class="eicon">📊</span>Excel</div>
       </div>
-      <div class="export-grid" style="margin-top:8px;">
-        <div class="export-btn gdrive-btn" onclick="saveToDrive()" style="grid-column:1/3;display:flex;align-items:center;justify-content:center;gap:6px;">
-          <span class="eicon" style="display:inline;margin:0;font-size:16px;">📁</span> Save to Google Drive
-        </div>
-        <div class="export-btn gdrive-btn" onclick="loadFromDrive()" style="display:flex;align-items:center;justify-content:center;">
-          <span class="eicon" style="display:inline;margin:0;font-size:16px;">☁️</span> Load
-        </div>
-      </div>
-      <div id="gdrive-status" style="font-size:11px;color:var(--text3);margin-top:6px;text-align:center;display:none;"></div>
       <input type="file" id="import-file" accept=".json" style="display:none;" onchange="handleImport(event)">
-      <input type="file" id="gdrive-load-file" accept=".json" style="display:none;" onchange="handleImport(event)">
     </div>
 
     <div class="settings-section">
@@ -2580,7 +2569,11 @@ function toggleDay(id) {
 
 // ════════════════════════════════════════ EXPORT / IMPORT ═════════════════════
 function exportJSON() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
+  // serializableState() already drops the sync block (Supabase tokens); also
+  // strip the Google Health OAuth token so a backup never carries credentials.
+  const data = serializableState();
+  if (data.googleHealth) data.googleHealth = { clientId: data.googleHealth.clientId || '' };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2599,11 +2592,15 @@ function handleImport(e) {
   reader.onload = ev => {
     try {
       const imported = JSON.parse(ev.target.result);
-      if (!confirm('This will replace ALL your current data. Are you sure?')) return;
-      state = imported;
+      if (!confirm('Restore this backup? It overwrites your diary, settings and foods on this device — your cloud sign-in stays.')) return;
+      // Merge the backup over current state so the live sync session (not in the
+      // file) is preserved; backed-up data keys win.
+      Object.assign(state, imported);
+      ensureDataModel();
       saveState();
       loadSettingsUI();
-      renderSwipeCard();
+      renderDiary();
+      if (typeof renderSwipeCard === 'function') renderSwipeCard();
       toast('✓ Data restored!');
     } catch(err) { toast('Error reading file'); }
   };
@@ -2612,74 +2609,72 @@ function handleImport(e) {
 }
 
 function exportXLSX() {
-  // Build a CSV-based export that Excel opens perfectly
-  const t = calcTDEE();
-  const days = getWeekDays(weekOffset);
-  const dayNames = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  const mpt = state.settings.mealsPerDay;
-  const slots = MEAL_SLOTS.slice(0,mpt);
+  // A CSV Excel opens perfectly, built from the tracking data: food diary,
+  // daily totals vs. goals, steps/energy, and micronutrient status.
+  ensureDataModel();
+  const goals = calcTDEE();
+  const rows = [];
+  const push = (...cols) => rows.push(cols);
+  const eLevel = { low: 1, medium: 2, high: 3 };
+  const slotOrder = { Breakfast: 0, Lunch: 1, Dinner: 2, Snacks: 3 };
+  const dayKeys = Object.keys(state.diary).filter(k => state.diary[k] && (state.diary[k].entries || []).length).sort();
 
-  let rows = [];
-  rows.push(['PlateIQ — Weekly Meal Plan']);
-  rows.push([]);
-  rows.push(['Profile']);
-  rows.push(['Weight (lb)', state.settings.weight]);
-  rows.push(['Daily target (kcal)', t.kcal]);
-  rows.push(['Protein target (g)', t.protein]);
-  rows.push(['Carbs target (g)', t.carbs]);
-  rows.push(['Fat target (g)', t.fat]);
-  rows.push([]);
-  rows.push(['Day','Date','Slot','Meal','Calories','Protein (g)','Carbs (g)','Fat (g)']);
+  push('PlateIQ export', new Date().toLocaleString());
+  push();
+  push('Profile');
+  push('Weight (lb)', state.settings.weight || '');
+  push('Daily goal (kcal)', goals.kcal);
+  push('Protein goal (g)', goals.protein);
+  push('Carbs goal (g)', goals.carbs);
+  push('Fat goal (g)', goals.fat);
+  push();
 
-  days.forEach((d,di) => {
-    const k = dateKey(d);
-    const plan = state.planner[k];
-    let dayTotals = {kcal:0,protein:0,carbs:0,fat:0};
-    slots.forEach(slot => {
-      const sl = plan?.meals?.find(m=>m.slotName===slot);
-      const meal = sl?.mealId ? state.savedMeals.find(m=>m.id===sl.mealId) : null;
-      const mName = meal ? meal.name : '—';
-      const mKcal = meal ? meal.kcal : '';
-      const mP = meal ? meal.protein : '';
-      const mC = meal ? meal.carbs : '';
-      const mF = meal ? meal.fat : '';
-      rows.push([dayNames[di], d.toLocaleDateString(), slot, mName, mKcal, mP, mC, mF]);
-      if (meal) { dayTotals.kcal+=meal.kcal; dayTotals.protein+=meal.protein; dayTotals.carbs+=meal.carbs; dayTotals.fat+=meal.fat; }
-    });
-    rows.push([dayNames[di]+' total','','','', dayTotals.kcal||'', dayTotals.protein||'', dayTotals.carbs||'', dayTotals.fat||'']);
-    rows.push([]);
+  push('Food diary');
+  push('Date', 'Meal', 'Food', 'Serving', 'Qty', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)');
+  dayKeys.forEach(k => {
+    state.diary[k].entries.slice()
+      .sort((a, b) => (slotOrder[a.slot] ?? 9) - (slotOrder[b.slot] ?? 9))
+      .forEach(e => push(k, e.slot || '', e.name, e.serving || '', fmtQty(e.qty),
+        Math.round(e.kcal * e.qty), Math.round(e.protein * e.qty), Math.round(e.carbs * e.qty), Math.round(e.fat * e.qty)));
+  });
+  push();
+
+  push('Daily totals');
+  push('Date', 'Calories', 'Goal', 'Protein (g)', 'Carbs (g)', 'Fat (g)', 'Steps', 'Exercise (kcal)', 'Energy logs', 'Avg energy (1-3)');
+  dayKeys.forEach(k => {
+    const dt = diaryTotals(k);
+    const logs = (state.energy.logs || []).filter(l => dkey(new Date(l.t)) === k);
+    const avg = logs.length ? (logs.reduce((s, l) => s + (eLevel[l.level] || 0), 0) / logs.length).toFixed(1) : '';
+    push(k, dt.kcal, goals.kcal, dt.protein, dt.carbs, dt.fat,
+      reconciledSteps(k) || '', exerciseCalsFor(k) || '', logs.length || '', avg);
+  });
+  push();
+
+  push('Micronutrients (latest \u2014 each over its natural window)');
+  push('Nutrient', 'Have', 'Need', 'Unit', '% of target', 'Window (days)');
+  nutrientStatus(new Date()).forEach(s => push(
+    s.nt.label, Math.round(s.have * 10) / 10, Math.round(s.need * 10) / 10, s.nt.unit,
+    Math.round(s.pct * 100) + '%', s.nt.window));
+  push();
+
+  push('Energy check-ins');
+  push('Date', 'Time', 'Level');
+  (state.energy.logs || []).slice().sort((a, b) => a.t - b.t).forEach(l => {
+    const d = new Date(l.t);
+    push(dkey(d), d.toLocaleTimeString(), (ENERGY_LEVELS[l.level] || {}).label || l.level);
   });
 
-  rows.push([]);
-  rows.push(['Saved Meals']);
-  rows.push(['Name','Calories','Protein (g)','Carbs (g)','Fat (g)','Foods']);
-  state.savedMeals.forEach(meal => {
-    const foods = meal.items.map(i => {
-      const f = getFood(i.foodId);
-      return f ? `${f.name} x${i.qty}` : '';
-    }).filter(Boolean).join('; ');
-    rows.push([meal.name, meal.kcal, meal.protein, meal.carbs, meal.fat, foods]);
-  });
-
-  rows.push([]);
-  rows.push(['My Foods (Will Eat)']);
-  rows.push(['Name','Serving','Calories','Protein (g)','Carbs (g)','Fat (g)']);
-  acceptedFoods().forEach(f => {
-    rows.push([f.name, f.serving||'', f.kcal, f.protein, f.carbs, f.fat]);
-  });
-
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const csv = rows.map(r => (r || []).map(c => `"${String(c == null ? '' : c).replace(/"/g, '""')}"`).join(',')).join('\n');
   const BOM = '\uFEFF';
-  const blob = new Blob([BOM+csv], {type:'text/csv;charset=utf-8;'});
+  const blob = new Blob([BOM + csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = `plateiq-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  toast('✓ Exported — open in Excel');
+  toast('\u2713 Exported \u2014 open in Excel');
 }
-
 function resetAll() {
   if (!confirm('Delete ALL data? This cannot be undone.')) return;
   localStorage.removeItem('plateiq_v1');
@@ -2960,118 +2955,6 @@ function renderHistoryMeasurements() {
 // Google Drive via file picker — no OAuth server needed.
 // Uses the Google Drive file picker API with a popup, saves/loads JSON backup.
 // User needs to configure CLIENT_ID from Google Cloud Console (free).
-const GDRIVE_CLIENT_ID = ''; // ← paste your Google OAuth Client ID here (optional)
-const GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-let gdriveToken = null;
-let gdriveFileId = null; // stored after first save
-
-function showDriveStatus(msg) {
-  const el = document.getElementById('gdrive-status');
-  el.textContent = msg;
-  el.style.display = 'block';
-  setTimeout(() => { el.style.display = 'none'; }, 5000);
-}
-
-async function gdriveAuth() {
-  if (!GDRIVE_CLIENT_ID) {
-    // Fallback: just download/upload file — user puts it in Drive manually
-    toast('Set GDRIVE_CLIENT_ID in the app to enable automatic Drive sync');
-    return null;
-  }
-  return new Promise((resolve) => {
-    const params = new URLSearchParams({
-      client_id: GDRIVE_CLIENT_ID,
-      redirect_uri: 'https://localhost',
-      response_type: 'token',
-      scope: GDRIVE_SCOPE,
-    });
-    const popup = window.open('https://accounts.google.com/o/oauth2/auth?' + params, 'gdrive_auth', 'width=500,height=600');
-    const interval = setInterval(() => {
-      try {
-        const url = popup.location.href;
-        if (url.includes('access_token')) {
-          const hash = new URLSearchParams(url.split('#')[1]);
-          gdriveToken = hash.get('access_token');
-          clearInterval(interval);
-          popup.close();
-          resolve(gdriveToken);
-        }
-      } catch(e) {}
-      if (popup.closed) { clearInterval(interval); resolve(null); }
-    }, 300);
-  });
-}
-
-async function saveToDrive() {
-  if (!GDRIVE_CLIENT_ID) {
-    // No client ID — just download the file with instructions
-    exportJSON();
-    showDriveStatus('File downloaded. Move it to your Google Drive folder on iPhone via the Files app.');
-    return;
-  }
-  const token = gdriveToken || await gdriveAuth();
-  if (!token) { showDriveStatus('Authentication cancelled'); return; }
-  showDriveStatus('Saving to Google Drive...');
-  try {
-    const content = JSON.stringify({state, mfpData}, null, 2);
-    const metadata = { name: 'plateiq-backup.json', mimeType: 'application/json' };
-    let response;
-    if (gdriveFileId) {
-      // Update existing file
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
-      form.append('file', new Blob([content], {type:'application/json'}));
-      response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${gdriveFileId}?uploadType=multipart`, {
-        method: 'PATCH', headers: {Authorization: 'Bearer '+token}, body: form
-      });
-    } else {
-      // Create new file
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
-      form.append('file', new Blob([content], {type:'application/json'}));
-      response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-        method: 'POST', headers: {Authorization: 'Bearer '+token}, body: form
-      });
-    }
-    const result = await response.json();
-    if (result.id) {
-      gdriveFileId = result.id;
-      localStorage.setItem('plateiq_gdrive_file_id', gdriveFileId);
-      showDriveStatus('✓ Saved to Google Drive');
-    } else {
-      showDriveStatus('Drive save failed — try again');
-    }
-  } catch(e) { showDriveStatus('Error: ' + e.message); }
-}
-
-async function loadFromDrive() {
-  if (!GDRIVE_CLIENT_ID) {
-    // Fallback: load from file picker
-    document.getElementById('gdrive-load-file').click();
-    showDriveStatus('Select your plateiq-backup.json file downloaded from Drive');
-    return;
-  }
-  const token = gdriveToken || await gdriveAuth();
-  if (!token) return;
-  const fileId = gdriveFileId || localStorage.getItem('plateiq_gdrive_file_id');
-  if (!fileId) { showDriveStatus('No Drive file found — save first'); return; }
-  showDriveStatus('Loading from Google Drive...');
-  try {
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: {Authorization: 'Bearer '+token}
-    });
-    const data = await response.json();
-    if (!confirm('Replace all local data with the Drive backup?')) return;
-    if (data.state) state = data.state;
-    if (data.mfpData) mfpData = data.mfpData;
-    saveState(); saveMFPData();
-    loadSettingsUI();
-    renderMFPSummary();
-    showDriveStatus('✓ Loaded from Google Drive');
-    toast('✓ Data restored from Drive');
-  } catch(e) { showDriveStatus('Error loading: ' + e.message); }
-}
-
 // ════════════════════════════════════════ SMART PORTIONING ═══════════════════
 // Given a food or recipe, returns the qty multiplier that best fills the
 // current meal's remaining calorie budget (based on daily target ÷ meals/day).
@@ -3668,7 +3551,6 @@ buildQueue();
 renderSwipeCard();
 updateTargetDisplay();
 renderMFPSummary();
-gdriveFileId = localStorage.getItem('plateiq_gdrive_file_id') || null;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  DIARY / TRACKER · BARCODE SCAN · FITBIT · RECOMMENDATIONS · PWA
@@ -5095,7 +4977,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v18 · 2026-07-05';
+const APP_VERSION = 'v19 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

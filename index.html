@@ -3558,6 +3558,48 @@ function saveMeal() {
   document.getElementById('meal-name-input').value = '';
 }
 
+// ── Auto-save logged meals to the Meals tab ──────────────────────────────────
+// When 2+ foods are logged to Breakfast/Lunch/Dinner, that combination is saved
+// as a reusable meal (updated in place as you add to the slot), unless an
+// identical meal already exists.
+const AUTOSAVE_SLOTS = { Breakfast: 1, Lunch: 1, Dinner: 1 };
+function mealItemsFromEntries(entries) {
+  return entries.filter(e => e.refId && (e.kind === 'food' || e.kind === 'recipe'))
+    .map(e => e.kind === 'recipe' ? { recipeId: e.refId, qty: e.qty } : { foodId: e.refId, qty: e.qty });
+}
+function mealMacrosFor(items) {
+  let kcal = 0, protein = 0, carbs = 0, fat = 0;
+  items.forEach(it => {
+    const src = it.recipeId ? state.recipes.find(r => r.id === it.recipeId) : getFood(it.foodId);
+    if (!src) return;
+    kcal += (src.kcal || 0) * it.qty; protein += (src.protein || 0) * it.qty;
+    carbs += (src.carbs || 0) * it.qty; fat += (src.fat || 0) * it.qty;
+  });
+  return { kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat) };
+}
+function mealSig(items) { return (items || []).map(i => (i.recipeId || i.foodId) + '@' + i.qty).sort().join('|'); }
+function syncSlotMeal(key, slot) {
+  ensureDataModel();
+  if (!AUTOSAVE_SLOTS[slot]) return; // only real meals, not Snacks
+  const d = state.diary[key];
+  const entries = d ? d.entries.filter(e => e.slot === slot) : [];
+  const items = mealItemsFromEntries(entries);
+  const autoKey = key + '|' + slot;
+  const priorIdx = state.savedMeals.findIndex(m => m.autoKey === autoKey);
+  const dropPrior = () => { if (priorIdx >= 0) { state.savedMeals.splice(priorIdx, 1); saveState(); } };
+  if (items.length < 2) { dropPrior(); return; } // a single food isn't a "meal"
+  const sig = mealSig(items);
+  if (state.savedMeals.some(m => m.autoKey !== autoKey && mealSig(m.items) === sig)) { dropPrior(); return; } // identical already exists
+  const names = entries.filter(e => e.refId && (e.kind === 'food' || e.kind === 'recipe')).map(e => e.name);
+  let name = names.slice(0, 3).join(', '); if (names.length > 3) name += ' +' + (names.length - 3);
+  const meal = {
+    id: priorIdx >= 0 ? state.savedMeals[priorIdx].id : 'm_auto_' + Date.now() + Math.round(Math.random() * 999),
+    name, items, autoKey, auto: true, ...mealMacrosFor(items)
+  };
+  if (priorIdx >= 0) state.savedMeals[priorIdx] = meal; else state.savedMeals.push(meal);
+  saveState();
+}
+
 // ── PATCH openMealAssign to show recipes in planner picker ───────────────────
 // (recipes usable as meals directly in planner)
 function openMealAssign(dk, slotName) {
@@ -3745,8 +3787,11 @@ function renderDiaryMeals(key) {
 }
 function removeDiaryEntry(key, id) {
   const d = state.diary[key]; if (!d) return;
+  const gone = d.entries.find(e => e.id === id);
   d.entries = d.entries.filter(e => e.id !== id);
-  saveState(); renderDiary();
+  saveState();
+  if (gone) syncSlotMeal(key, gone.slot);
+  renderDiary();
 }
 function editDiaryEntry(key, id) {
   ensureDataModel();
@@ -3933,7 +3978,10 @@ function confirmLog() {
   if (p.editId) {
     const d = state.diary[p.editKey];
     const e = d && d.entries.find(x => x.id === p.editId);
+    const oldSlot = e ? e.slot : null;
     if (e) { e.qty = qty; e.slot = slot; saveState(); }
+    syncSlotMeal(p.editKey, slot);
+    if (oldSlot && oldSlot !== slot) syncSlotMeal(p.editKey, oldSlot);
     closeModal('qty-modal');
     toast('Entry updated');
     renderDiary();
@@ -3949,6 +3997,7 @@ function confirmLog() {
     micros: p.micros || null
   });
   saveState();
+  syncSlotMeal(key, slot);
   closeModal('qty-modal'); closeModal('log-food-modal'); closeModal('recommend-modal');
   toast('Logged to ' + slot);
   renderDiary();
@@ -5238,7 +5287,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v27 · 2026-07-05';
+const APP_VERSION = 'v28 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

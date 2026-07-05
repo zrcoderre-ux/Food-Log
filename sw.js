@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v16-2026-07-05';
+const VERSION = 'plateiq-v17-2026-07-05';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -15,8 +15,6 @@ const SHELL_ASSETS = [
 
 // Hosts we never want to cache aggressively (live data / auth).
 const BYPASS_HOSTS = [
-  'api.fitbit.com',
-  'www.fitbit.com',
   'world.openfoodfacts.org',
   'accounts.google.com',
   'www.googleapis.com',

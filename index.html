@@ -2078,7 +2078,7 @@ function applyFoodOverride(f) {
   if (ov.name && ov.name !== f.name) merged.origName = f.name; // keep original name searchable
   return merged;
 }
-function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods].map(applyFoodOverride); }
+function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods].filter(f => !(state.removed && state.removed[f.id])).map(applyFoodOverride); }
 function getFood(id) { return allFoods().find(f => f.id === id); }
 // Match a food by its current name OR its original (pre-rename) name.
 function foodMatches(f, q) {
@@ -2223,11 +2223,12 @@ function toast(msg) {
 let unratedQueue = [];
 
 function buildQueue() {
+  const gone = (id) => state.removed && state.removed[id];
   unratedQueue = FOOD_LIBRARY
-    .filter(f => !(f.id in state.ratings))
+    .filter(f => !(f.id in state.ratings) && !gone(f.id))
     .map(f => f.id);
   // append unrated custom foods
-  state.customFoods.filter(f => !(f.id in state.ratings)).forEach(f => unratedQueue.push(f.id));
+  state.customFoods.filter(f => !(f.id in state.ratings) && !gone(f.id)).forEach(f => unratedQueue.push(f.id));
 }
 
 function renderSwipeCard() {
@@ -2524,11 +2525,17 @@ function renderInventoryTodayAlert() {
   el.innerHTML = `⚠️ <b>${alerts.length}</b> inventory item${alerts.length > 1 ? 's' : ''} low or expiring: ${names}${alerts.length > 3 ? '…' : ''} <span style="text-decoration:underline;">View</span>`;
 }
 function deleteFoodFromList(id) {
-  if (!confirm('Remove this food from your lists? This can’t be undone.')) return;
+  if (!confirm('Remove this food from the app entirely? This can’t be undone.')) return;
   ensureDataModel();
   delete state.ratings[id];
   delete state.microOverrides[id];
+  delete state.foodOverrides[id];
+  const wasCustom = state.customFoods.some(f => f.id === id);
   state.customFoods = state.customFoods.filter(f => f.id !== id); // fully removes scanned/custom foods
+  // Built-in library foods can't be spliced out of an array, so mark them
+  // removed — otherwise clearing the rating just drops them back into the
+  // swipe queue. Scanned/custom foods aren't marked, so re-scanning re-adds them.
+  if (!wasCustom) state.removed[id] = true;
   saveState();
   renderFoodsList(currentListFilter);
   if (typeof renderSwipeCard === 'function') renderSwipeCard();
@@ -4100,6 +4107,17 @@ function ensureDataModel() {
   if (!state.energy) state.energy = { enabled: true, notify: false, wakeStart: 8, wakeEnd: 22, logs: [], lastPromptT: 0 };
   if (state.energy.pushOn === undefined) state.energy.pushOn = false;
   if (state.energy.vapidPublic === undefined) state.energy.vapidPublic = '';
+  // One-time: earlier builds left scanned foods unrated, so they showed up in
+  // the swipe queue. Move any already-scanned food straight into Will-Eat.
+  if (!state.ratings) state.ratings = {};
+  if (!state.customFoods) state.customFoods = [];
+  if (!state.removed) state.removed = {}; // { foodId: true }  foods deleted from the app entirely
+  if (!state.scannedRatedMigration) {
+    (state.customFoods || []).forEach(f => {
+      if ((f.barcode || f.category === 'Scanned') && !(f.id in state.ratings)) state.ratings[f.id] = 'yes';
+    });
+    state.scannedRatedMigration = true;
+  }
 }
 function dkey(d) {
   const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -4659,9 +4677,10 @@ async function lookupBarcode(code) {
       food.image = img; // backfill photo for a previously-scanned item
     }
     markFoodUsed(fid);
+    // Scanned foods always go straight to Will-Eat — never into the swipe queue.
+    state.ratings[fid] = 'yes';
     const result = { fid, name, brand: p.brands || '', img, serving, kcal, protein, carbs, fat };
     if (scanMode === 'willeat') {
-      state.ratings[fid] = 'yes'; // add straight to the Will-Eat pool
       saveState();
       showScanWillEat(result);
     } else {
@@ -5865,7 +5884,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v43 · 2026-07-05';
+const APP_VERSION = 'v45 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

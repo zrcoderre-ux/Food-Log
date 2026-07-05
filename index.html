@@ -1553,8 +1553,14 @@ body {
       <input type="text" id="cf-name" placeholder="e.g. Greek yogurt">
     </div>
     <div class="form-group">
-      <label>Emoji (optional)</label>
-      <input type="text" id="cf-emoji" placeholder="🥛" maxlength="2" style="width:70px;">
+      <label>Icon — emoji or your own photo</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="cf-icon-preview" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;">🍽️</span>
+        <input type="text" id="cf-emoji" placeholder="🥛" maxlength="4" style="width:56px;text-align:center;font-size:20px;" oninput="onAddFoodEmoji()">
+        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cf-photo-input').click()">📷 Photo</button>
+        <a id="cf-photo-clear" href="javascript:void(0)" onclick="clearAddFoodPhoto()" style="color:var(--text3);font-size:12px;display:none;">use emoji</a>
+        <input type="file" id="cf-photo-input" accept="image/*" style="display:none;" onchange="onAddFoodPhoto(event)">
+      </div>
     </div>
     <div class="form-group">
       <label>Serving size (e.g. 1 cup, 100g)</label>
@@ -2539,10 +2545,9 @@ function updateIconPreview() {
 }
 function onEmojiEdit() { updateIconPreview(); }
 function clearPhoto() { microsEditImage = ''; updateIconPreview(); }
-// Read a chosen photo, canvas-compress it to a small data URL, use it as the icon.
-function onPhotoPick(event) {
-  const file = event.target && event.target.files && event.target.files[0];
-  if (!file) return;
+// Read a chosen photo and canvas-compress it to a small (~160px, JPEG) data URL
+// so custom food icons stay light in localStorage. Shared by both icon pickers.
+function compressImageFile(file, done) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
@@ -2553,14 +2558,18 @@ function onPhotoPick(event) {
       else { if (h > max) { w = Math.round(w * max / h); h = max; } }
       const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
       cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      try { microsEditImage = cv.toDataURL('image/jpeg', 0.8); }
-      catch (err) { microsEditImage = e.target.result; }
-      updateIconPreview();
+      let out; try { out = cv.toDataURL('image/jpeg', 0.8); } catch (err) { out = e.target.result; }
+      done(out);
     };
     img.onerror = () => { toast('Could not read that image'); };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
+}
+function onPhotoPick(event) {
+  const file = event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  compressImageFile(file, (url) => { microsEditImage = url; updateIconPreview(); });
   event.target.value = '';
 }
 const EDIT_MACROS = [ ['kcal', 'Calories', 'cal'], ['protein', 'Protein', 'g'], ['carbs', 'Carbs', 'g'], ['fat', 'Fat', 'g'] ];
@@ -2664,8 +2673,26 @@ function saveMicros() {
 }
 
 // ════════════════════════════════════════ ADD CUSTOM FOOD ═════════════════════
+let addFoodImage = '';
+function updateAddFoodIcon() {
+  const el = document.getElementById('cf-icon-preview'); if (!el) return;
+  const emoji = (document.getElementById('cf-emoji').value || '').trim();
+  el.innerHTML = foodIcon({ emoji: emoji || '🍽️', image: addFoodImage }, 40);
+  const clr = document.getElementById('cf-photo-clear');
+  if (clr) clr.style.display = addFoodImage ? 'inline' : 'none';
+}
+function onAddFoodEmoji() { updateAddFoodIcon(); }
+function clearAddFoodPhoto() { addFoodImage = ''; updateAddFoodIcon(); }
+function onAddFoodPhoto(event) {
+  const file = event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  compressImageFile(file, (url) => { addFoodImage = url; updateAddFoodIcon(); });
+  event.target.value = '';
+}
 function openAddFood() {
   ['cf-name','cf-emoji','cf-serving','cf-kcal','cf-protein','cf-carbs','cf-fat'].forEach(id => document.getElementById(id).value = '');
+  addFoodImage = '';
+  updateAddFoodIcon();
   document.getElementById('add-food-modal').classList.add('open');
 }
 
@@ -2675,6 +2702,7 @@ function saveCustomFood() {
   const food = {
     id: 'c_' + Date.now(),
     emoji: document.getElementById('cf-emoji').value || '🍽️',
+    image: addFoodImage || '',
     name,
     category: document.getElementById('cf-category').value,
     serving: document.getElementById('cf-serving').value || '1 serving',
@@ -2691,6 +2719,7 @@ function saveCustomFood() {
   saveState();
   closeModal('add-food-modal');
   toast(`${food.emoji} ${food.name} added to your foods!`);
+  addFoodImage = '';
   renderSwipeCard();
   updateRatedBar();
 }
@@ -5836,7 +5865,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v42 · 2026-07-05';
+const APP_VERSION = 'v43 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

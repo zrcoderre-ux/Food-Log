@@ -810,6 +810,19 @@ body {
 .fitbit-strip .fb-icon { font-size: 16px; }
 .fitbit-strip .fb-stat b { color: var(--text); font-weight: 600; }
 .fitbit-strip .fb-sync { margin-left: auto; color: var(--accent); font-size: 11px; display: flex; align-items: center; gap: 5px; }
+.hydro-card { margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; }
+.hydro-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.hydro-title { font-size: 14px; font-weight: 600; }
+.hydro-total { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.hydro-total b { color: var(--text); font-size: 15px; }
+.hydro-bar { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.hydro-fill { height: 100%; background: #3AA6E0; border-radius: 4px; transition: width 0.3s ease; }
+.hydro-btns { display: flex; gap: 8px; }
+.hydro-btns button { flex: 1; background: #EAF6FC; border: 1px solid #BFE3F5; color: #0C5A86; border-radius: var(--radius-sm); padding: 8px 4px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; }
+.hydro-btns button span { display: block; font-size: 10px; font-weight: 400; opacity: 0.8; }
+.hydro-btns button:active { background: #BFE3F5; }
+.hydro-btns .hydro-undo { flex: 0 0 44px; font-size: 18px; color: var(--text2); background: var(--surface2); border-color: var(--border); }
+@media (prefers-color-scheme: dark) { .hydro-btns button { background: rgba(58,166,224,0.15); border-color: rgba(58,166,224,0.35); color: #7Fc7ea; } }
 .diary-actions { display: flex; gap: 10px; padding: 0 16px 14px; }
 .diary-action {
   flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -1073,6 +1086,21 @@ body {
       <span class="fb-stat"><b id="gh-cals-v">—</b> active cal</span>
       <span class="fb-stat">❤️ <b id="gh-hr-v">—</b></span>
       <span class="fb-sync">tap to sync</span>
+    </div>
+
+    <!-- Hydration -->
+    <div class="hydro-card">
+      <div class="hydro-top">
+        <span class="hydro-title">💧 Water</span>
+        <span class="hydro-total" onclick="setWaterGoal()" style="cursor:pointer;"><b id="hydro-oz">0</b> / <span id="hydro-goal">64</span> oz</span>
+      </div>
+      <div class="hydro-bar"><div class="hydro-fill" id="hydro-fill" style="width:0%"></div></div>
+      <div class="hydro-btns">
+        <button onclick="addWater(8)">＋ Cup <span>8oz</span></button>
+        <button onclick="addWater(16)">＋ Bottle <span>16oz</span></button>
+        <button onclick="addWater(24)">＋ Large <span>24oz</span></button>
+        <button class="hydro-undo" onclick="addWater(-8)" title="Undo a cup">−</button>
+      </div>
     </div>
 
     <!-- Quick actions -->
@@ -1534,7 +1562,7 @@ body {
 <div class="modal-overlay" id="food-picker-modal" onclick="overlayClick(event,'food-picker-modal')">
   <div class="modal">
     <div class="modal-title">Add food to meal</div>
-    <input type="text" class="food-search" id="food-search-input" placeholder="Search your foods..." oninput="filterFoodPicker()">
+    <input type="text" class="food-search" id="food-search-input" placeholder="Search foods (USDA + Open Food Facts)…" oninput="filterFoodPicker()">
     <div class="food-pick-list" id="food-pick-list"></div>
     <button class="btn-secondary" onclick="closeModal('food-picker-modal')" style="margin-top:12px;">Cancel</button>
   </div>
@@ -2414,24 +2442,29 @@ function openFoodPicker() {
   document.getElementById('food-picker-modal').classList.add('open');
 }
 
+let pickerSearchTimer = null;
 function filterFoodPicker() {
-  const q = document.getElementById('food-search-input').value.toLowerCase();
-  const foods = acceptedFoods().filter(f => f.name.toLowerCase().includes(q));
+  const q = document.getElementById('food-search-input').value.toLowerCase().trim();
   const el = document.getElementById('food-pick-list');
-  if (foods.length === 0) {
-    el.innerHTML = `<div style="text-align:center;padding:20px;font-size:13px;color:var(--text3);">No foods found. Rate foods in the Foods tab first.</div>`;
-    return;
-  }
-  el.innerHTML = foods.map(f => `
+  const foods = acceptedFoods().filter(f => !q || f.name.toLowerCase().includes(q));
+  const localHtml = foods.map(f => `
     <div class="food-pick-item" onclick="addFoodToMeal('${f.id}')">
       <span class="fpi-emoji">${foodIcon(f, 22)}</span>
       <div class="fpi-info">
-        <div class="fpi-name">${f.name}</div>
+        <div class="fpi-name">${escapeHtml(f.name)}</div>
         <div class="fpi-macros">${f.serving} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
       </div>
       <span class="fpi-add">+</span>
-    </div>
-  `).join('');
+    </div>`).join('');
+  if (pickerSearchTimer) clearTimeout(pickerSearchTimer);
+  if (q.length < 2) {
+    el.innerHTML = localHtml || `<div style="text-align:center;padding:20px;font-size:13px;color:var(--text3);">Type to search USDA + Open Food Facts, or rate foods in the Foods tab.</div>`;
+    return;
+  }
+  el.innerHTML = (localHtml ? `<div class="log-db-head">Your foods</div>${localHtml}` : '') +
+    `<div class="log-db-head">Food database (USDA + Open Food Facts)</div><div id="picker-db-results"><div class="rec-empty" style="padding:12px;">Searching…</div></div>`;
+  const seq = ++offSearchSeq;
+  pickerSearchTimer = setTimeout(() => searchDatabasesInto('picker-db-results', q, seq, 'addOffToMeal'), 350);
 }
 
 function addFoodToMeal(foodId) {
@@ -2440,6 +2473,14 @@ function addFoodToMeal(foodId) {
   else state.currentMeal.push({foodId, qty:1});
   closeModal('food-picker-modal');
   renderBuilder();
+}
+function addOffToMeal(id) {
+  const f = offCache[id]; if (!f) return;
+  ensureDataModel();
+  if (!state.customFoods.find(x => x.id === f.id)) state.customFoods.push(f);
+  state.ratings[f.id] = 'yes'; // also keep it in your Will-Eat list
+  saveState();
+  addFoodToMeal(f.id);
 }
 
 function saveMeal() {
@@ -3688,6 +3729,8 @@ function ensureDataModel() {
   if (!state.googleDaily) state.googleDaily = {}; // { 'YYYY-MM-DD': { steps } }  Google Health (Fitbit device)
   if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
   if (!state.microOverrides) state.microOverrides = {}; // { foodId: { vitc: 12, iron: 2, ... } }  user-entered micronutrients
+  if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
+  if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
   if (!state.energy) state.energy = { enabled: true, notify: false, wakeStart: 8, wakeEnd: 22, logs: [], lastPromptT: 0 };
@@ -3714,6 +3757,31 @@ function diaryTotals(key) {
 }
 function changeDiaryDate(delta) { diaryDate.setDate(diaryDate.getDate() + delta); renderDiary(); }
 function goToday() { diaryDate = new Date(); renderDiary(); }
+
+// ── Hydration ────────────────────────────────────────────────────────────────
+function waterGoal() { ensureDataModel(); return (state.settings && state.settings.waterGoal) || 64; }
+function waterOz(key) { ensureDataModel(); const h = state.hydration[key]; return (h && h.oz) || 0; }
+function addWater(oz) {
+  ensureDataModel();
+  const key = dkey(diaryDate);
+  const cur = waterOz(key);
+  state.hydration[key] = { oz: Math.max(0, Math.round(cur + oz)), syncedAt: Date.now() };
+  saveState();
+  renderHydration();
+}
+function setWaterGoal() {
+  const cur = waterGoal();
+  const v = parseInt(prompt('Daily water goal (oz):', cur), 10);
+  if (v && v > 0) { ensureDataModel(); state.settings.waterGoal = v; saveState(); renderHydration(); }
+}
+function renderHydration() {
+  const key = dkey(diaryDate);
+  const oz = waterOz(key), goal = waterGoal();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('hydro-oz', oz); set('hydro-goal', goal);
+  const fill = document.getElementById('hydro-fill');
+  if (fill) fill.style.width = Math.min(100, goal ? (oz / goal * 100) : 0) + '%';
+}
 
 function renderDiary() {
   ensureDataModel();
@@ -3751,6 +3819,7 @@ function renderDiary() {
   setDiaryMacro('d-fat', tot.fat, t.fat, 'fat');
 
   renderGoogleStrip(key);
+  renderHydration();
   renderSyncBadge();
   renderEnergyCard();
   renderDiaryMeals(key);
@@ -3894,11 +3963,13 @@ async function usdaSearch(q) {
   const j = await r.json();
   return (j.foods || []).map(usdaToFood).filter(f => f.kcal > 0 && f.name);
 }
-async function searchDatabases(q, seq) {
-  const el = document.getElementById('db-results'); if (!el) return;
-  // USDA first (better for whole foods) — the key is built in, then Open Food Facts.
+function searchDatabases(q, seq) { return searchDatabasesInto('db-results', q, seq, 'logOff'); }
+// Shared USDA + Open Food Facts search: fetches both, merges, and renders each
+// row with the given action (logOff for the diary, addOffToMeal for the picker).
+async function searchDatabasesInto(containerId, q, seq, action) {
+  const el = document.getElementById(containerId); if (!el) return;
   const tasks = [];
-  if (usdaKey()) tasks.push(usdaSearch(q).catch(() => []));
+  if (usdaKey()) tasks.push(usdaSearch(q).catch(() => [])); // USDA first (whole foods), key built in
   tasks.push(offSearch(q).catch(() => []));
   let results;
   try { results = await Promise.all(tasks); } catch (e) { results = []; }
@@ -3910,7 +3981,7 @@ async function searchDatabases(q, seq) {
   }
   merged.forEach(f => { offCache[f.id] = f; });
   el.innerHTML = merged.slice(0, 40).map(f =>
-    pickRow(`logOff('${f.id}')`, foodIcon(f, 20), f.name + (f.brand ? ' · ' + f.brand : ''),
+    pickRow(`${action}('${f.id}')`, foodIcon(f, 20), f.name + (f.brand ? ' · ' + f.brand : ''),
       `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
   ).join('');
 }
@@ -4631,6 +4702,7 @@ function mergeCloudInto(cloud) {
   });
   state.healthDaily = mergeDaily(state.healthDaily, cloud.healthDaily);
   state.microOverrides = { ...(cloud.microOverrides || {}), ...(state.microOverrides || {}) };
+  state.hydration = mergeDaily(state.hydration, cloud.hydration);
   _origSaveState();
 }
 async function pushCloud() {
@@ -5302,7 +5374,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v29 · 2026-07-05';
+const APP_VERSION = 'v30 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

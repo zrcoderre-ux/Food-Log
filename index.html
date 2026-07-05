@@ -4055,18 +4055,36 @@ function disconnectGoogleHealth() {
   saveState(); renderGoogleHealthSettings(); renderDiary();
   toast('Google Health disconnected');
 }
+// The dailyRollUp response nests the aggregate under data-type-specific field
+// names (e.g. steps -> steps.countSum, resting HR -> ...average). Rather than
+// hard-code every name, walk each rollup point and pull the best numeric value:
+// prefer a key that looks like an aggregate (sum/count/average/total/value),
+// else fall back to any numeric leaf. Skips civil-time / metadata fields.
 function parseGhValue(j) {
-  const pts = j.dataPoints || j.point || [];
+  const pts = j.rollupDataPoints || j.dataPoints || j.point || [];
+  const META = /civil|time|date|zone|source|origin|window|^id$|name|unit|type|version/i;
+  const PREF = /sum|count|average|avg|mean|total|value/i;
   let total = 0;
   pts.forEach(p => {
-    const v = p.value || (p.fieldValues && p.fieldValues[0]) || p.aggregate || p;
-    const n = v && (v.integerValue != null ? v.integerValue : v.intVal != null ? v.intVal :
-      v.doubleValue != null ? v.doubleValue : v.fpVal != null ? v.fpVal : (typeof v === 'number' ? v : null));
-    if (n != null) total += Number(n);
+    let preferred = null, fallback = null;
+    const num = (x) => {
+      if (typeof x === 'number') return x;
+      if (typeof x === 'string' && x.trim() !== '' && !isNaN(Number(x))) return Number(x);
+      return null;
+    };
+    const walk = (o, keyHint) => {
+      const n = num(o);
+      if (n != null) { if (PREF.test(keyHint)) { if (preferred == null) preferred = n; } else if (fallback == null) fallback = n; return; }
+      if (o && typeof o === 'object') for (const k of Object.keys(o)) { if (META.test(k)) continue; walk(o[k], k); }
+    };
+    walk(p, '');
+    const v = preferred != null ? preferred : fallback;
+    if (v != null) total += v;
   });
   return total;
 }
-async function ghRollup(dataType, keyStr) {
+let ghDebugLog = [];
+async function ghRollup(dataType, keyStr, debug) {
   if (!ghValid()) return null;
   const [y, m, d] = keyStr.split('-').map(Number);
   const body = {
@@ -4082,17 +4100,20 @@ async function ghRollup(dataType, keyStr) {
       headers: { Authorization: 'Bearer ' + state.googleHealth.token, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
+    const text = await r.text();
+    if (debug) ghDebugLog.push({ type: dataType, status: r.status, body: text.slice(0, 700) });
     if (r.status === 401) { state.googleHealth.token = null; saveState(); renderGoogleHealthSettings(); toast('Google session expired — reconnect'); return null; }
     if (!r.ok) return null;
-    return parseGhValue(await r.json());
-  } catch (e) { return null; }
+    let j = {}; try { j = JSON.parse(text); } catch (e) {}
+    return parseGhValue(j);
+  } catch (e) { if (debug) ghDebugLog.push({ type: dataType, error: String(e) }); return null; }
 }
-async function syncGoogleHealth(keyStr) {
+async function syncGoogleHealth(keyStr, debug) {
   if (!ghValid()) return null;
   const [steps, activeCals, restingHr] = await Promise.all([
-    ghRollup('steps', keyStr),
-    ghRollup('active-energy-burned', keyStr),
-    ghRollup('daily-resting-heart-rate', keyStr)
+    ghRollup('steps', keyStr, debug),
+    ghRollup('active-energy-burned', keyStr, debug),
+    ghRollup('daily-resting-heart-rate', keyStr, debug)
   ]);
   ensureDataModel();
   const prev = state.googleDaily[keyStr] || {};
@@ -4107,8 +4128,20 @@ async function syncGoogleHealth(keyStr) {
 }
 async function syncGoogleHealthToday(force) {
   if (!ghValid()) { if (force) reconnectGoogleHealth(); return; }
-  await syncGoogleHealth(dkey(diaryDate));
+  ghDebugLog = [];
+  const res = await syncGoogleHealth(dkey(diaryDate), !!force);
   renderDiary();
+  if (force) {
+    const empty = !res || (!res.steps && !res.activeCals && !res.restingHr);
+    if (empty) {
+      const txt = 'PlateIQ Google Health sync debug (' + dkey(diaryDate) + '):\n' + JSON.stringify(ghDebugLog, null, 2);
+      console.log(txt);
+      if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => toast('No data returned — details copied to clipboard')).catch(() => toast('No data returned — see console for details'));
+      else toast('No data returned — see console for details');
+    } else {
+      toast('Google Health synced');
+    }
+  }
 }
 function renderGoogleStrip(key) {
   const strip = document.getElementById('google-strip'); if (!strip) return;
@@ -5027,7 +5060,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v20 · 2026-07-05';
+const APP_VERSION = 'v21 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

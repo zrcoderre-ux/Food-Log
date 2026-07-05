@@ -5153,28 +5153,43 @@ function openRecommend() {
     openModalById('recommend-modal'); return;
   }
   const needP = Math.max(0, remP), needC = Math.max(0, remC), needF = Math.max(0, remF);
-  const ctx = {
-    remKcal, needP, needC, needF,
-    gP: t.protein || 1, gC: t.carbs || 1, gF: t.fat || 1,
-    status: nutrientStatus(new Date())
-  };
+  const base = { remKcal, needP, needC, needF, gP: t.protein || 1, gC: t.carbs || 1, gF: t.fat || 1, status: nutrientStatus(new Date()) };
   let pool = acceptedFoods();
   if (pool.length < 5) pool = allFoods();
-  const scored = pool.filter(f => f.kcal > 0)
-    .map(f => ({ f, score: recScore(f, ctx) }))
-    .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score).slice(0, 8);
+  pool = pool.filter(f => f.kcal > 0);
 
-  list.innerHTML = (scored.map(({ f }) => `<div class="rec-item" onclick="logFood('${f.id}')">
-      <span class="ri-emoji">${foodIcon(f, 28)}</span>
-      <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
-        <div class="ri-why">${recWhy(f, ctx)}</div>
-        <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
-      <span class="ri-add">＋</span></div>`).join('')
-    || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>')
-    + micronutrientRecsHtml();
+  // Which main meals are still ahead today? (none logged yet, and the time hasn't passed)
+  const isToday = key === dkey(new Date());
+  const hour = new Date().getHours();
+  const cutoff = { Breakfast: 11, Lunch: 16, Dinner: 23 };
+  const logged = new Set(((state.diary[key] || {}).entries || []).map(e => e.slot));
+  const upcoming = ['Breakfast', 'Lunch', 'Dinner'].filter(s => !logged.has(s) && (!isToday || hour < cutoff[s]));
+  const n = upcoming.length;
+  // Split the day's remaining budget across the upcoming meals; snacks get a slice.
+  const mealCtx = (fr) => ({ remKcal: base.remKcal * fr, needP: base.needP * fr, needC: base.needC * fr, needF: base.needF * fr, gP: base.gP, gC: base.gC, gF: base.gF, status: base.status });
+  const sections = upcoming.map(slot => ({ slot, label: slot, ctx: mealCtx(1 / n) }));
+  sections.push({ slot: 'Snacks', label: 'Snacks', ctx: mealCtx(n ? 0.3 : 1) });
+
+  const used = new Set();
+  let html = '';
+  sections.forEach(sec => {
+    const picks = pool.filter(f => !used.has(f.id))
+      .map(f => ({ f, score: recScore(f, sec.ctx) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score).slice(0, 4);
+    if (!picks.length) return;
+    picks.forEach(p => used.add(p.f.id));
+    html += `<div class="rec-nutri-head">${sec.label}</div>` + picks.map(({ f }) => `<div class="rec-item" onclick="logFoodTo('${f.id}','${sec.slot}')">
+        <span class="ri-emoji">${foodIcon(f, 28)}</span>
+        <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
+          <div class="ri-why">${recWhy(f, sec.ctx)}</div>
+          <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
+        <span class="ri-add">＋</span></div>`).join('');
+  });
+  list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml();
   openModalById('recommend-modal');
 }
+function logFoodTo(id, slot) { logTargetSlot = slot; logFood(id); }
 // Rank foods by how well they fill what you STILL need, per calorie — so a
 // protein gap steers you to lean protein instead of just "anything that fits".
 // Contributions are capped at the remaining need (overshoot earns nothing),
@@ -5287,7 +5302,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v28 · 2026-07-05';
+const APP_VERSION = 'v29 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

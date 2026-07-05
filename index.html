@@ -4219,7 +4219,8 @@ function usdaKey() { ensureDataModel(); return (state.usda.apiKey || DEFAULT_USD
 async function usdaSearch(q) {
   if (!usdaKey()) return [];
   const url = 'https://api.nal.usda.gov/fdc/v1/foods/search?api_key=' + encodeURIComponent(usdaKey()) +
-    '&query=' + encodeURIComponent(q) + '&pageSize=20&dataType=Foundation,SR%20Legacy,Branded';
+    // Survey (FNDDS) = prepared/mixed dishes (e.g. "Egg, cheese and bacon on a biscuit") — fills the restaurant/deli blind spot.
+    '&query=' + encodeURIComponent(q) + '&pageSize=25&dataType=Foundation,SR%20Legacy,Survey%20%28FNDDS%29,Branded';
   const r = await fetch(url);
   if (!r.ok) return [];
   const j = await r.json();
@@ -5556,7 +5557,24 @@ function recScore(f, ctx) {
   if (value <= 0) return 0;
   let score = value / Math.max(f.kcal, 20) * 1000; // value per calorie
   if (ctx.remKcal > 0 && f.kcal > ctx.remKcal) score *= ctx.remKcal / f.kcal; // demote calorie-budget blowers
+  score *= (1 + inventoryUrgencyBoost(f)); // nudge foods you own that are near best-by
   return score;
+}
+// If this food matches something in your inventory that's near best-by, return
+// a 0..0.5 boost (bigger the sooner it expires) so it ranks higher, all else equal.
+function inventoryUrgencyBoost(f) {
+  if (!state.inventory || !state.inventory.length) return 0;
+  const names = [f.name, f.origName].filter(Boolean).map(s => s.toLowerCase());
+  let best = 0;
+  state.inventory.forEach(it => {
+    const inm = (it.name || '').trim().toLowerCase(); if (!inm) return;
+    if (!names.some(n => n.includes(inm) || inm.includes(n))) return;
+    const dl = invDaysLeft(it);
+    if (dl == null) return;
+    const urgency = dl < 0 ? 1 : (dl <= 7 ? (7 - dl) / 7 : 0);
+    best = Math.max(best, urgency);
+  });
+  return best * 0.5;
 }
 function micronutrientRecsHtml() {
   const status = nutrientStatus(new Date());
@@ -5597,6 +5615,7 @@ function recWhy(f, ctx) {
     });
   }
   const parts = [];
+  if (inventoryUrgencyBoost(f) > 0) parts.push('🧺 use soon (near best-by)');
   if (c[0][1] > 0) parts.push('Fills your ' + c[0][2]);
   if (c[0][0] === 'protein' && perCal >= 0.12) parts.push('lean protein');
   if (microName) parts.push('good source of ' + microName);
@@ -5645,7 +5664,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v35 · 2026-07-05';
+const APP_VERSION = 'v36 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

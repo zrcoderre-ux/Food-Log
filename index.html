@@ -2352,6 +2352,8 @@ function renderFoodsList(filter) {
     if (filter === 'all') return true;
     return state.ratings[f.id] === filter;
   });
+  // Newest first: foods you just scanned/added/logged rise to the top.
+  foods.sort((a, b) => foodUsedAt(b.id) - foodUsedAt(a.id));
   if (foods.length === 0) {
     list.innerHTML = `<div class="empty-state"><span class="es-icon">${filter==='yes'?'🥗':'🚫'}</span><p>No foods here yet.</p></div>`;
     return;
@@ -2721,8 +2723,9 @@ function saveCustomFood() {
     custom: true,
   };
   state.customFoods.push(food);
-  // auto-add to swipe queue as 'yes' since user is adding it deliberately
+  // Deliberately added → Will-Eat, and marked used so it sorts to the top.
   state.ratings[food.id] = 'yes';
+  markFoodUsed(food.id);
   saveState();
   closeModal('add-food-modal');
   toast(`${food.emoji} ${food.name} added to your foods!`);
@@ -5884,7 +5887,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v45 · 2026-07-05';
+const APP_VERSION = 'v46 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

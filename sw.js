@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v36-2026-07-05';
+const VERSION = 'plateiq-v37-2026-07-05';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -21,6 +21,7 @@ const BYPASS_HOSTS = [
   'supabase.co',
   'supabase.in',
   'api.nal.usda.gov',
+  'trackapi.nutritionix.com',
   'health.googleapis.com',
   'oauth2.googleapis.com',
 ];

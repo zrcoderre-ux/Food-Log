@@ -37,16 +37,38 @@ A PWA must be served over **HTTPS** (both options provide it) for the service
 worker, camera, and Fitbit auth to work. Opening `index.html` from `file://`
 disables those features.
 
-## Fitbit setup
+## Steps / Fitbit via the Google Health API
 
-Because there's no backend, you connect Fitbit with your own free developer app:
+Fitbit's own Web API is being retired in **September 2026** and replaced by the
+**Google Health API** (Google OAuth). PlateIQ supports the new API — connect
+with Google to pull daily steps, including your Fitbit device's once your Fitbit
+account is migrated to your Google account. It's read client-side (no backend).
 
-1. Register an app at <https://dev.fitbit.com/apps/new>.
-2. Set **OAuth 2.0 Application Type** to **Client** and
-   **Redirect URL** to your deployed page's exact URL (shown in the app's
-   Settings → Fitbit section).
-3. Copy the app's **OAuth 2.0 Client ID** into Settings → Fitbit → Client ID,
-   then tap **Connect Fitbit**.
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create a
+   project.
+2. **APIs & Services → Library** → enable the **Google Health API**.
+3. **OAuth consent screen**: User type *External*; add the scope
+   `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`;
+   add **yourself as a Test user**; leave Publishing status on **Testing** (this
+   lets the restricted health scope work for you without Google verification).
+4. **Credentials → Create credentials → OAuth client ID → Web application**.
+   Under **Authorized JavaScript origins** add the origin shown in the app
+   (Settings → Google Health), e.g. `https://zrcoderre-ux.github.io`. Copy the
+   **Client ID**.
+5. In PlateIQ → Settings → **Google Health** → paste the Client ID → **Connect
+   Google Health** and approve. Make sure your Fitbit account is linked to your
+   Google account so its steps flow through.
+
+> The Google Health API is new (launched 2026); PlateIQ reads steps via the
+> `steps/dataPoints:dailyRollUp` method. If the step count reads 0 after
+> connecting, the response value field may differ — tell me and I'll adjust the
+> parser.
+
+### Legacy Fitbit (until Sept 2026)
+
+The old direct Fitbit connection still works until the sunset: register a
+**Client / Implicit Grant** app at <https://dev.fitbit.com/apps/new> with the
+Redirect URL shown in Settings → Fitbit, and paste the Client ID there.
 
 ## Cloud sync & zero-touch step import (Supabase)
 

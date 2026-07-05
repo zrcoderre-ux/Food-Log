@@ -1265,7 +1265,7 @@ body {
       <div class="steps-sub" id="steps-sub"></div>
       <div class="steps-chart" id="steps-chart"></div>
       <div class="steps-legend">
-        <span><i style="background:var(--accent)"></i>Fitbit</span>
+        <span><i style="background:var(--accent)"></i>Watch</span>
         <span><i style="background:var(--fat)"></i>Apple Health</span>
         <span><i style="background:var(--carb)"></i>Phone</span>
       </div>
@@ -1449,7 +1449,26 @@ body {
     </div>
 
     <div class="settings-section">
-      <div class="settings-label">Fitbit</div>
+      <div class="settings-label">Google Health (steps &amp; Fitbit)</div>
+      <div id="gh-connected" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
+          <span style="font-size:16px;">✅</span><div>Connected to Google Health</div>
+        </div>
+        <div class="export-grid">
+          <div class="export-btn" onclick="syncGoogleHealthToday(true)"><span class="eicon">🔄</span>Sync now</div>
+          <div class="export-btn" onclick="disconnectGoogleHealth()"><span class="eicon">🔌</span>Disconnect</div>
+        </div>
+      </div>
+      <div id="gh-disconnected">
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Fitbit's own API is being retired (Sept 2026) and replaced by the <b>Google Health API</b>. Connect with Google to pull daily steps — including your Fitbit device's, once it's migrated to your Google account. Setup: create a Google Cloud OAuth <b>Web application</b> client, enable the Health API, add this page's origin as an authorized JavaScript origin, add yourself as a test user, then paste the Client ID below (see README).</p>
+        <div class="settings-row"><label>Google Client ID</label><input type="text" id="gh-client-id" placeholder="…apps.googleusercontent.com" style="width:150px;" onchange="saveGoogleClientId()"></div>
+        <button class="btn-primary" style="margin-top:10px;" onclick="connectGoogleHealth()">Connect Google Health</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;">Authorized JavaScript origin to register: <span id="gh-origin"></span></div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">Fitbit (legacy · retiring Sept 2026)</div>
       <div id="fitbit-connected" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
           <span style="font-size:16px;">✅</span>
@@ -1461,7 +1480,7 @@ body {
         </div>
       </div>
       <div id="fitbit-disconnected">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Sync steps, calories burned and weight from Fitbit to adjust your daily calorie budget. Enter your Fitbit app's OAuth 2.0 <b>Client ID</b> (register a free app at dev.fitbit.com — set redirect URL to this page's address and OAuth type to <b>Client / Implicit Grant</b>).</p>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;"><b style="color:var(--warn);">Being retired by Fitbit in Sept 2026 — use Google Health above instead.</b> This still works until then: enter your Fitbit app's OAuth 2.0 <b>Client ID</b> (register at dev.fitbit.com — redirect URL = this page, OAuth type <b>Client / Implicit Grant</b>).</p>
         <div class="settings-row">
           <label>Client ID</label>
           <input type="text" id="fitbit-client-id" placeholder="23ABCD" style="width:120px;" onchange="saveFitbitClientId()">
@@ -1776,6 +1795,7 @@ body {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <script>
 // ════════════════════════════════════════ DATA ════════════════════════════════
 const FOOD_LIBRARY = [
@@ -3698,6 +3718,8 @@ function ensureDataModel() {
   if (!state.diary) state.diary = {};
   if (!state.fitbit) state.fitbit = { clientId: '', token: null, expiresAt: 0, userId: null };
   if (!state.fitbitDaily) state.fitbitDaily = {};
+  if (!state.googleHealth) state.googleHealth = { clientId: '', token: null, expiresAt: 0 };
+  if (!state.googleDaily) state.googleDaily = {}; // { 'YYYY-MM-DD': { steps } }  Google Health (Fitbit)
   if (!state.pedometer) state.pedometer = {}; // { 'YYYY-MM-DD': { steps } }  phone-accelerometer steps
   if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
@@ -4221,6 +4243,105 @@ function disconnectFitbit() {
   toast('Fitbit disconnected');
 }
 
+// ── Google Health API (replaces the Fitbit Web API, which sunsets Sept 2026) ──
+// Client-side via Google Identity Services (token model — no server secret).
+// Reads the user's daily steps (incl. their Fitbit device data once migrated).
+const GH_SCOPE = 'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly';
+let ghTokenClient = null;
+function ghReady() { return !!(window.google && google.accounts && google.accounts.oauth2); }
+function ghValid() { ensureDataModel(); return !!(state.googleHealth.token && Date.now() < state.googleHealth.expiresAt); }
+function saveGoogleClientId() { ensureDataModel(); state.googleHealth.clientId = (document.getElementById('gh-client-id').value || '').trim(); saveState(); }
+function initGhTokenClient() {
+  if (!ghReady()) return false;
+  const cid = (state.googleHealth.clientId || '').trim();
+  if (!cid) return false;
+  ghTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: cid,
+    scope: GH_SCOPE,
+    callback: (resp) => {
+      if (resp && resp.access_token) {
+        ensureDataModel();
+        state.googleHealth.token = resp.access_token;
+        state.googleHealth.expiresAt = Date.now() + ((resp.expires_in || 3600) * 1000);
+        saveState(); renderGoogleHealthSettings();
+        toast('Google Health connected');
+        syncGoogleHealthToday(true);
+      } else { toast('Google authorization failed'); }
+    },
+    error_callback: () => { toast('Google sign-in was cancelled or blocked'); }
+  });
+  return true;
+}
+function connectGoogleHealth() {
+  ensureDataModel();
+  const cid = (document.getElementById('gh-client-id').value || '').trim();
+  if (!cid) { toast('Enter your Google OAuth Client ID first'); return; }
+  state.googleHealth.clientId = cid; saveState();
+  if (!ghReady()) { toast('Google sign-in still loading — try again in a moment'); return; }
+  if (!ghTokenClient && !initGhTokenClient()) { toast('Couldn’t start Google sign-in'); return; }
+  ghTokenClient.requestAccessToken({ prompt: 'consent' });
+}
+function reconnectGoogleHealth() {
+  if (!ghTokenClient && !initGhTokenClient()) { connectGoogleHealth(); return; }
+  ghTokenClient.requestAccessToken({ prompt: '' }); // silent if session is still valid
+}
+function disconnectGoogleHealth() {
+  ensureDataModel();
+  if (ghValid() && ghReady()) { try { google.accounts.oauth2.revoke(state.googleHealth.token); } catch (e) {} }
+  state.googleHealth.token = null; state.googleHealth.expiresAt = 0;
+  saveState(); renderGoogleHealthSettings(); renderDiary();
+  toast('Google Health disconnected');
+}
+function parseGhSteps(j) {
+  const pts = j.dataPoints || j.point || [];
+  let total = 0;
+  pts.forEach(p => {
+    const v = p.value || (p.fieldValues && p.fieldValues[0]) || p.aggregate || p;
+    const n = v && (v.integerValue != null ? v.integerValue : v.intVal != null ? v.intVal :
+      v.doubleValue != null ? v.doubleValue : v.fpVal != null ? v.fpVal : (typeof v === 'number' ? v : null));
+    if (n != null) total += Number(n);
+  });
+  return Math.round(total);
+}
+async function syncGoogleHealth(keyStr) {
+  if (!ghValid()) return null;
+  const [y, m, d] = keyStr.split('-').map(Number);
+  const body = {
+    range: {
+      start: { date: { year: y, month: m, day: d }, time: { hours: 0, minutes: 0, seconds: 0, nanos: 0 } },
+      end: { date: { year: y, month: m, day: d }, time: { hours: 23, minutes: 59, seconds: 59, nanos: 0 } }
+    },
+    windowSizeDays: 1
+  };
+  try {
+    const r = await fetch('https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + state.googleHealth.token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (r.status === 401) { state.googleHealth.token = null; saveState(); renderGoogleHealthSettings(); toast('Google session expired — reconnect'); return null; }
+    if (!r.ok) return null;
+    const steps = parseGhSteps(await r.json());
+    ensureDataModel();
+    state.googleDaily[keyStr] = { steps, syncedAt: Date.now() };
+    saveState();
+    return steps;
+  } catch (e) { return null; }
+}
+async function syncGoogleHealthToday(force) {
+  if (!ghValid()) { if (force) reconnectGoogleHealth(); return; }
+  await syncGoogleHealth(dkey(diaryDate));
+  renderDiary();
+}
+function renderGoogleHealthSettings() {
+  ensureDataModel();
+  const conn = ghValid();
+  const cd = document.getElementById('gh-connected'); if (cd) cd.style.display = conn ? 'block' : 'none';
+  const dd = document.getElementById('gh-disconnected'); if (dd) dd.style.display = conn ? 'none' : 'block';
+  const idf = document.getElementById('gh-client-id'); if (idf) idf.value = state.googleHealth.clientId || '';
+  const oj = document.getElementById('gh-origin'); if (oj) oj.textContent = location.origin;
+}
+
 // ── Phone pedometer (accelerometer) + step reconciliation ────────────────────
 // Steps can come from Fitbit (watch) and/or the phone's own accelerometer. To
 // avoid double-counting when both are active, Fitbit is treated as the primary
@@ -4236,26 +4357,28 @@ function stepsBySource(key) {
   const fb = state.fitbitDaily[key];
   const ped = state.pedometer[key];
   const h = state.healthDaily[key];
+  const g = state.googleDaily[key];
   return {
     fitbit: fb && fb.steps != null ? fb.steps : 0,
     phone: ped && ped.steps ? Math.round(ped.steps) : 0,
-    health: h && h.steps ? Math.round(h.steps) : 0 // Apple Health (background, all-day)
+    health: h && h.steps ? Math.round(h.steps) : 0, // Apple Health (background, all-day)
+    google: g && g.steps ? Math.round(g.steps) : 0  // Google Health (Fitbit device)
   };
 }
 function reconciledSteps(key) {
   const s = stepsBySource(key);
-  return Math.max(s.fitbit, s.phone, s.health); // overlap counted once, not summed
+  return Math.max(s.fitbit, s.phone, s.health, s.google); // overlap counted once, not summed
 }
 function exerciseCalsFor(key) {
   const fb = state.fitbitDaily[key];
   const s = stepsBySource(key);
-  const bestBackup = Math.max(s.phone, s.health); // best non-Fitbit source
+  const bestBackup = Math.max(s.phone, s.health, s.google); // best non-legacy-Fitbit source
   if (fb && fb.exerciseCals) {
-    // Fitbit is primary; add calories only for steps beyond Fitbit's count.
+    // Legacy Fitbit activity data is primary; add calories only for steps beyond it.
     const extra = Math.max(0, bestBackup - s.fitbit);
     return Math.round(fb.exerciseCals + extra * kcalPerStep());
   }
-  // No Fitbit activity data for this day — estimate from the reconciled steps.
+  // Otherwise estimate from the reconciled steps (Google Health / Apple / phone).
   return Math.round(reconciledSteps(key) * kcalPerStep());
 }
 
@@ -4333,8 +4456,9 @@ function renderStepsChart() {
     let color = 'var(--surface2)';
     if (x.steps > 0) {
       const s = x.src;
-      if (s.fitbit >= s.health && s.fitbit >= s.phone) color = 'var(--accent)';
-      else if (s.health >= s.phone) color = 'var(--fat)';
+      const mx = Math.max(s.fitbit, s.google, s.health, s.phone);
+      if (mx === s.fitbit || mx === s.google) color = 'var(--accent)'; // watch (Fitbit/Google)
+      else if (mx === s.health) color = 'var(--fat)';
       else color = 'var(--carb)';
     }
     const label = x.steps >= 1000 ? (x.steps / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : (x.steps || '');
@@ -5058,7 +5182,7 @@ overlayClick = function (e, id) {
   }
 };
 const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); renderEnergySettings(); };
+openSettings = function () { _origOpenSettings(); renderFitbitSettings(); renderPedSettings(); renderSyncSettings(); renderUsdaSettings(); renderEnergySettings(); renderGoogleHealthSettings(); };
 const _origRenderHistory = renderHistory;
 renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyInsights(); };
 
@@ -5079,7 +5203,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v7 · 2026-07-04';
+const APP_VERSION = 'v8 · 2026-07-04';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');
@@ -5122,8 +5246,11 @@ ensureDataModel();
 if (handleFitbitRedirect()) { /* returned from Fitbit auth */ }
 renderFitbitSettings();
 renderSyncSettings();
+renderGoogleHealthSettings();
 renderDiary();
 const _vEl = document.getElementById('app-version'); if (_vEl) _vEl.textContent = APP_VERSION;
+// If Google Health is still authorized, refresh today's steps on load.
+if (ghValid()) syncGoogleHealthToday(false);
 
 // Energy check-ins: handle a notification tap, listen for SW messages, and poll.
 handleEnergyHash();

@@ -1507,7 +1507,7 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Restaurant menus (Nutritionix)</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Add restaurant &amp; chain-menu items to search (e.g. a specific "Dunkin' Bacon Egg &amp; Cheese"). Get a free key at <b>developer.nutritionix.com</b> → sign up → your <b>App ID</b> and <b>App Key</b>, then paste them here. Results appear in the same search bar as USDA and Open Food Facts.</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Add restaurant &amp; chain-menu items to search (e.g. a specific "Dunkin' Bacon Egg &amp; Cheese"). <b>Note:</b> Nutritionix ended its free tier — this needs a paid/enterprise <b>App ID</b> and <b>App Key</b> (request one at developer.nutritionix.com). For most prepared foods, the built-in USDA search (incl. FNDDS) already works with no key. If you have Nutritionix credentials, paste them below.</p>
       <div class="settings-row"><label>App ID</label><input type="text" id="nx-app-id" placeholder="xxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
       <div class="settings-row"><label>App Key</label><input type="text" id="nx-app-key" placeholder="xxxxxxxxxxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
       <div id="nx-status" style="font-size:11px;color:var(--text3);margin-top:6px;"></div>
@@ -5730,7 +5730,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v37 · 2026-07-05';
+const APP_VERSION = 'v38 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

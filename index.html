@@ -1125,6 +1125,7 @@ body {
         <div class="swipe-btn btn-yes" onclick="doSwipe('yes')" title="Will eat">✓</div>
       </div>
       <div class="swipe-hint">Swipe or tap ✓ / ✕</div>
+      <button class="btn-secondary" style="margin:10px 16px 0;width:calc(100% - 32px);" onclick="openScanner('willeat')">📷 Scan a barcode to add a food</button>
     </div>
   </div>
 
@@ -1138,7 +1139,8 @@ body {
       <button style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent);font-family:'DM Sans',sans-serif;font-weight:500;" onclick="showView('swipe')">+ Swipe</button>
     </div>
     <div class="foods-list" id="foods-list"></div>
-    <div style="padding:16px;">
+    <div style="padding:16px;display:flex;flex-direction:column;gap:8px;">
+      <button class="btn-secondary" onclick="openScanner('willeat')">📷 Scan a barcode to add a food</button>
       <button class="btn-secondary" onclick="openAddFood()">＋ Add custom food</button>
     </div>
   </div>
@@ -1196,6 +1198,7 @@ body {
       <div class="section-head">Foods in this meal</div>
       <div class="meal-items" id="meal-items"></div>
       <button class="add-food-btn" onclick="openFoodPicker()" style="margin-top:8px;">＋ Add food from your list</button>
+      <button class="add-food-btn" onclick="openScanner('willeat')" style="margin-top:8px;">📷 Scan a barcode to add a food</button>
     </div>
 
     <div id="saved-view" style="display:none;">
@@ -3880,7 +3883,7 @@ function confirmLog() {
 }
 
 // ── Barcode scanning + Open Food Facts ───────────────────────────────────────
-let scanStream = null, scanDetector = null, scanRAF = null, scanning = false, zxingReader = null;
+let scanStream = null, scanDetector = null, scanRAF = null, scanning = false, zxingReader = null, scanMode = 'diary';
 const SCAN_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'];
 function num(x) { const v = parseFloat(x); return isFinite(v) ? v : 0; }
 async function startScanCamera(statusEl) {
@@ -3895,7 +3898,8 @@ async function startScanCamera(statusEl) {
     return false;
   }
 }
-async function openScanner() {
+async function openScanner(mode) {
+  scanMode = mode || 'diary';
   logTargetSlot = logTargetSlot || defaultSlot();
   document.getElementById('scanner-result').style.display = 'none';
   document.getElementById('scanner-stage').style.display = 'block';
@@ -3991,9 +3995,16 @@ async function lookupBarcode(code) {
     ensureDataModel();
     if (!state.customFoods.find(f => f.id === fid)) {
       state.customFoods.push({ id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code });
-      saveState();
     }
-    showScanResult({ fid, name, brand: p.brands || '', img: p.image_small_url || p.image_front_thumb_url || '', serving, kcal, protein, carbs, fat });
+    const result = { fid, name, brand: p.brands || '', img: p.image_small_url || p.image_front_thumb_url || '', serving, kcal, protein, carbs, fat };
+    if (scanMode === 'willeat') {
+      state.ratings[fid] = 'yes'; // add straight to the Will-Eat pool
+      saveState();
+      showScanWillEat(result);
+    } else {
+      saveState();
+      showScanResult(result);
+    }
   } catch (e) {
     statusEl.textContent = 'Lookup failed (offline?). Check your connection or type the number again.';
   }
@@ -4007,13 +4018,32 @@ function showScanResult(p) {
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
     <button class="btn-primary" onclick="logScanned('${p.fid}')">Add to diary</button>
-    <button class="btn-secondary" onclick="openScanner()">Scan another</button>`;
+    <button class="btn-secondary" onclick="openScanner(scanMode)">Scan another</button>`;
+}
+function showScanWillEat(p) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  const el = document.getElementById('scanner-result'); el.style.display = 'block';
+  el.innerHTML = `<div class="scan-product">
+      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
+      <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
+    </div>
+    <div style="text-align:center;color:var(--accent);font-weight:600;margin:8px 0 6px;">✓ Added to your Will-Eat foods</div>
+    <button class="btn-primary" onclick="openScanner('willeat')">Scan another</button>
+    <button class="btn-secondary" onclick="closeScannerToFoods()">Done</button>`;
+}
+function closeScannerToFoods() {
+  closeScanner();
+  // Refresh the meal builder (current view) and the Foods swipe stats so the
+  // newly added Will-Eat food shows up right away.
+  if (typeof renderBuilder === 'function') renderBuilder();
+  if (typeof renderSwipeCard === 'function') renderSwipeCard();
 }
 function showScanNotFound(code) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="rec-empty">No product found for <b>${escapeHtml(code)}</b> in Open Food Facts.<br><br>You can add it as a custom food instead.</div>
-    <button class="btn-secondary" onclick="openScanner()">Try another barcode</button>
+    <button class="btn-secondary" onclick="openScanner(scanMode)">Try another barcode</button>
     <button class="btn-secondary" onclick="closeScanner();openAddFood();">Add manually</button>`;
 }
 function logScanned(fid) { closeScanner(); logFood(fid); }
@@ -5081,7 +5111,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v23 · 2026-07-05';
+const APP_VERSION = 'v24 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

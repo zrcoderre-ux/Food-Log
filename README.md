@@ -47,10 +47,13 @@ account is migrated to your Google account. It's read client-side (no backend).
 1. In the [Google Cloud Console](https://console.cloud.google.com/), create a
    project.
 2. **APIs & Services → Library** → enable the **Google Health API**.
-3. **OAuth consent screen**: User type *External*; add the scope
-   `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`;
-   add **yourself as a Test user**; leave Publishing status on **Testing** (this
-   lets the restricted health scope work for you without Google verification).
+3. **OAuth consent screen**: User type *External*; add **both** read scopes —
+   `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`
+   (steps + active calories) and
+   `https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly`
+   (resting heart rate); add **yourself as a Test user**; leave Publishing status
+   on **Testing** (this lets the restricted health scopes work for you without
+   Google verification).
 4. **Credentials → Create credentials → OAuth client ID → Web application**.
    Under **Authorized JavaScript origins** add the origin shown in the app
    (Settings → Google Health), e.g. `https://zrcoderre-ux.github.io`. Copy the
@@ -59,10 +62,12 @@ account is migrated to your Google account. It's read client-side (no backend).
    Google Health** and approve. Make sure your Fitbit account is linked to your
    Google account so its steps flow through.
 
-> The Google Health API is new (launched 2026); PlateIQ reads steps via the
-> `steps/dataPoints:dailyRollUp` method. If the step count reads 0 after
-> connecting, the response value field may differ — tell me and I'll adjust the
-> parser.
+> The Google Health API is new (launched 2026); PlateIQ reads **steps**,
+> **active-energy-burned**, and **daily-resting-heart-rate** via the
+> `dataPoints:dailyRollUp` method (active calories feed your exercise budget;
+> resting HR shows on Today and in Energy insights). If a value reads 0 after
+> connecting, that data type's response field may differ — tell me and I'll
+> adjust the parser.
 
 ### Legacy Fitbit (until Sept 2026)
 

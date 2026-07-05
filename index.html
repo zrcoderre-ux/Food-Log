@@ -1426,12 +1426,15 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Cloud sync</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Sync your diary and settings across devices, and enable zero-touch step import. Uses your own free Supabase project — paste its <b>Project URL</b> and <b>anon public key</b> from Supabase → Project Settings → API. (See the README for the one-time SQL setup.)</p>
-      <div class="settings-row"><label>Supabase URL</label><input type="text" id="sb-url" placeholder="https://xxxx.supabase.co" onchange="saveSyncConfig()" style="width:170px;"></div>
-      <div class="settings-row"><label>Anon key</label><input type="text" id="sb-key" placeholder="eyJhbGci…" onchange="saveSyncConfig()" style="width:170px;"></div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Sync your diary and settings across devices, and enable zero-touch step import. Enter your email to get a one-time sign-in link.</p>
+      <div id="sb-config-rows" style="display:none;">
+        <div class="settings-row"><label>Supabase URL</label><input type="text" id="sb-url" placeholder="https://xxxx.supabase.co" onchange="saveSyncConfig()" style="width:170px;"></div>
+        <div class="settings-row"><label>Public key</label><input type="text" id="sb-key" placeholder="sb_publishable_… or eyJ…" onchange="saveSyncConfig()" style="width:170px;"></div>
+      </div>
       <div id="sync-signedout">
         <div class="settings-row"><label>Email</label><input type="email" id="sb-email" placeholder="you@email.com" style="width:170px;"></div>
         <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Send sign-in link</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
       </div>
       <div id="sync-signedin" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -4527,13 +4530,20 @@ function renderPedometerStrip(key) {
 }
 
 // ── Cloud sync (Supabase, plain REST — no SDK) ───────────────────────────────
+// Built-in project so setup is just an email entry. These are public by design
+// (client-side keys, protected by row-level security). state.sync.url/anonKey
+// override them if the user points at a different project via Advanced.
+const DEFAULT_SB_URL = 'https://tilwmgmyyzmbmvtjsqgx.supabase.co';
+const DEFAULT_SB_ANON = 'sb_publishable_-ehcqZN5NaKCseVGCJhFIg_UJKBr-Ns';
 function syncCfg() { ensureDataModel(); return state.sync; }
-function sbConfigured() { const s = syncCfg(); return !!(s.url && s.anonKey); }
+function sbUrlBase() { return (syncCfg().url || DEFAULT_SB_URL || '').replace(/\/+$/, ''); }
+function sbAnon() { return syncCfg().anonKey || DEFAULT_SB_ANON || ''; }
+function sbConfigured() { return !!(sbUrlBase() && sbAnon()); }
 function sbAuthed() { const s = syncCfg(); return !!(s.access && s.userId); }
-function sbUrl(path) { return syncCfg().url.replace(/\/+$/, '') + path; }
-function sbBaseHeaders() { return { apikey: syncCfg().anonKey, 'Content-Type': 'application/json' }; }
+function sbUrl(path) { return sbUrlBase() + path; }
+function sbBaseHeaders() { return { apikey: sbAnon(), 'Content-Type': 'application/json' }; }
 function sbAuthHeaders() { return { ...sbBaseHeaders(), Authorization: 'Bearer ' + syncCfg().access }; }
-function ingestEndpoint() { return syncCfg().url.replace(/\/+$/, '') + '/rest/v1/rpc/ingest_steps'; }
+function ingestEndpoint() { return sbUrlBase() + '/rest/v1/rpc/ingest_steps'; }
 function cryptoRandom(n) {
   const a = new Uint8Array(n); crypto.getRandomValues(a);
   return Array.from(a, b => ('0' + b.toString(16)).slice(-2)).join('');
@@ -4561,6 +4571,10 @@ function saveSyncConfig() {
   state.sync.anonKey = (document.getElementById('sb-key').value || '').trim();
   saveState();
   renderSyncSettings();
+}
+function toggleSbAdvanced() {
+  const el = document.getElementById('sb-config-rows');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 async function sendMagicLink() {
   ensureDataModel();
@@ -4736,7 +4750,7 @@ async function syncNow(silent) {
   } finally { _syncing = false; }
 }
 function copyIngest() {
-  const text = 'Endpoint: ' + ingestEndpoint() + '\nToken: ' + (state.sync.ingestToken || '') + '\napikey: ' + syncCfg().anonKey;
+  const text = 'Endpoint: ' + ingestEndpoint() + '\nToken: ' + (state.sync.ingestToken || '') + '\napikey: ' + sbAnon();
   if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Copied ingest details')).catch(() => toast('Copy failed'));
 }
 function renderSyncSettings() {
@@ -5237,7 +5251,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v9 · 2026-07-05';
+const APP_VERSION = 'v10 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

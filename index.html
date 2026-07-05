@@ -2021,10 +2021,21 @@ let state = {
 // Food Facts doesn't match the box). Applied everywhere foods are read.
 function applyFoodOverride(f) {
   const ov = state.foodOverrides && state.foodOverrides[f.id];
-  return ov ? { ...f, ...ov } : f;
+  if (!ov) return f;
+  const merged = { ...f, ...ov };
+  if (ov.name && ov.name !== f.name) merged.origName = f.name; // keep original name searchable
+  return merged;
 }
 function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods].map(applyFoodOverride); }
 function getFood(id) { return allFoods().find(f => f.id === id); }
+// Match a food by its current name OR its original (pre-rename) name.
+function foodMatches(f, q) {
+  if (!q) return true;
+  return f.name.toLowerCase().includes(q) || (f.origName && f.origName.toLowerCase().includes(q));
+}
+// Recency of use (logged/scanned/added) for ranking search results.
+function foodUsedAt(id) { return (state.foodUsage && state.foodUsage[id]) || 0; }
+function markFoodUsed(id) { if (!id) return; ensureDataModel(); state.foodUsage[id] = Date.now(); }
 // Icon for a food/entry: the product photo (from a scan) if present, else emoji.
 // Falls back to the emoji if the image fails to load.
 function foodIcon(o, px) {
@@ -2321,7 +2332,7 @@ function searchFoodsToAdd() {
   if (foodsAddTimer) clearTimeout(foodsAddTimer);
   if (q.length < 2) { renderFoodsList(currentListFilter); return; }
   const el = document.getElementById('foods-list');
-  const locals = allFoods().filter(f => f.name.toLowerCase().includes(q)).slice(0, 20);
+  const locals = allFoods().filter(f => foodMatches(f, q)).slice(0, 20);
   const localHtml = locals.map(f => foodAddRow(f, state.ratings[f.id] === 'yes')).join('');
   el.innerHTML = (localHtml ? `<div class="log-db-head">Your foods</div>${localHtml}` : '') +
     `<div class="log-db-head">Food database (USDA + Open Food Facts)</div><div id="foods-add-db"><div class="rec-empty" style="padding:12px;">Searching…</div></div>`;
@@ -2330,7 +2341,7 @@ function searchFoodsToAdd() {
 }
 function addLocalToWillEat(id) {
   ensureDataModel();
-  state.ratings[id] = 'yes';
+  state.ratings[id] = 'yes'; markFoodUsed(id);
   saveState();
   searchFoodsToAdd();
   toast('Added to Will-Eat');
@@ -2339,7 +2350,7 @@ function addOffToWillEat(id) {
   const f = offCache[id]; if (!f) return;
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) state.customFoods.push(f);
-  state.ratings[f.id] = 'yes';
+  state.ratings[f.id] = 'yes'; markFoodUsed(f.id);
   saveState();
   searchFoodsToAdd();
   toast('Added to Will-Eat');
@@ -2378,7 +2389,9 @@ function openMicrosEditor(foodId) {
   microsEditBase = { num: parseServingNum(f.serving) || 1, kcal: +f.kcal || 0, protein: +f.protein || 0, carbs: +f.carbs || 0, fat: +f.fat || 0, micros: cur };
   document.getElementById('micros-title').textContent = f.name;
   document.getElementById('macro-fields').innerHTML =
-    `<div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Serving <span style="color:var(--text3);font-weight:400;font-size:11px;">changing the amount rescales the values</span></label>
+    `<div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Name</label>
+       <input type="text" id="me-name" value="${escapeHtml(f.name || '')}" placeholder="Food name" style="width:150px;"></div>
+     <div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Serving <span style="color:var(--text3);font-weight:400;font-size:11px;">changing the amount rescales the values</span></label>
        <input type="text" id="me-serving" value="${escapeHtml(f.serving || '')}" placeholder="1 serving" style="width:130px;" oninput="scaleServing()"></div>` +
     EDIT_MACROS.map(([k, label, unit]) => `
     <div class="settings-row" style="padding:6px 0;">
@@ -2398,6 +2411,8 @@ function saveMicros() {
   const id = microsEditId;
   // Corrected macros + serving
   const ov = {};
+  const name = (document.getElementById('me-name').value || '').trim();
+  if (name) ov.name = name; // original name kept searchable via applyFoodOverride
   const serving = (document.getElementById('me-serving').value || '').trim();
   if (serving) ov.serving = serving;
   EDIT_MACROS.forEach(([k]) => { const v = parseFloat(document.getElementById('me-' + k).value); if (!isNaN(v) && v >= 0) ov[k] = Math.round(v * 100) / 100; });
@@ -2411,7 +2426,7 @@ function saveMicros() {
   Object.keys(state.diary || {}).forEach(day => {
     (state.diary[day].entries || []).forEach(e => {
       if (e.refId === id && e.kind === 'food') {
-        e.kcal = f.kcal; e.protein = f.protein; e.carbs = f.carbs; e.fat = f.fat; e.serving = f.serving; e.micros = fm;
+        e.kcal = f.kcal; e.protein = f.protein; e.carbs = f.carbs; e.fat = f.fat; e.serving = f.serving; e.micros = fm; e.name = f.name;
       }
     });
   });
@@ -2540,7 +2555,7 @@ let pickerSearchTimer = null;
 function filterFoodPicker() {
   const q = document.getElementById('food-search-input').value.toLowerCase().trim();
   const el = document.getElementById('food-pick-list');
-  const foods = acceptedFoods().filter(f => !q || f.name.toLowerCase().includes(q));
+  const foods = acceptedFoods().filter(f => foodMatches(f, q));
   const localHtml = foods.map(f => `
     <div class="food-pick-item" onclick="addFoodToMeal('${f.id}')">
       <span class="fpi-emoji">${foodIcon(f, 22)}</span>
@@ -2572,7 +2587,7 @@ function addOffToMeal(id) {
   const f = offCache[id]; if (!f) return;
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) state.customFoods.push(f);
-  state.ratings[f.id] = 'yes'; // also keep it in your Will-Eat list
+  state.ratings[f.id] = 'yes'; markFoodUsed(f.id); // also keep it in your Will-Eat list
   saveState();
   addFoodToMeal(f.id);
 }
@@ -3823,7 +3838,8 @@ function ensureDataModel() {
   if (!state.googleDaily) state.googleDaily = {}; // { 'YYYY-MM-DD': { steps } }  Google Health (Fitbit device)
   if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
   if (!state.microOverrides) state.microOverrides = {}; // { foodId: { vitc: 12, iron: 2, ... } }  user-entered micronutrients
-  if (!state.foodOverrides) state.foodOverrides = {}; // { foodId: { kcal, protein, carbs, fat, serving } }  corrected values
+  if (!state.foodOverrides) state.foodOverrides = {}; // { foodId: { kcal, protein, carbs, fat, serving, name } }  corrected values
+  if (!state.foodUsage) state.foodUsage = {}; // { foodId: lastUsedTimestamp }  for search ranking
   if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
@@ -3998,8 +4014,11 @@ let offSearchTimer = null, offSearchSeq = 0;
 const offCache = {};
 function renderLogSearch() {
   const q = (document.getElementById('log-search-input').value || '').toLowerCase().trim();
-  let foods = allFoods().filter(f => !q || f.name.toLowerCase().includes(q));
-  foods.sort((a, b) => (state.ratings[b.id] === 'yes' ? 1 : 0) - (state.ratings[a.id] === 'yes' ? 1 : 0));
+  let foods = allFoods().filter(f => foodMatches(f, q));
+  // Foods you've logged/scanned/added before come first (most recent first),
+  // then Will-Eat foods, then the rest.
+  foods.sort((a, b) => (foodUsedAt(b.id) - foodUsedAt(a.id))
+    || ((state.ratings[b.id] === 'yes' ? 1 : 0) - (state.ratings[a.id] === 'yes' ? 1 : 0)));
   const list = document.getElementById('log-search-list');
   const localHtml = foods.slice(0, 40).map(f =>
     pickRow(`logFood('${f.id}')`, foodIcon(f, 20), f.name, `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
@@ -4162,6 +4181,7 @@ function confirmLog() {
     kcal: p.kcal, protein: p.protein, carbs: p.carbs, fat: p.fat,
     micros: p.micros || null
   });
+  if (p.kind === 'food') markFoodUsed(p.refId);
   saveState();
   syncSlotMeal(key, slot);
   closeModal('qty-modal'); closeModal('log-food-modal'); closeModal('recommend-modal');
@@ -4288,6 +4308,7 @@ async function lookupBarcode(code) {
     } else if (img && !food.image) {
       food.image = img; // backfill photo for a previously-scanned item
     }
+    markFoodUsed(fid);
     const result = { fid, name, brand: p.brands || '', img, serving, kcal, protein, carbs, fat };
     if (scanMode === 'willeat') {
       state.ratings[fid] = 'yes'; // add straight to the Will-Eat pool
@@ -4799,6 +4820,7 @@ function mergeCloudInto(cloud) {
   state.microOverrides = { ...(cloud.microOverrides || {}), ...(state.microOverrides || {}) };
   state.hydration = mergeDaily(state.hydration, cloud.hydration);
   state.foodOverrides = { ...(cloud.foodOverrides || {}), ...(state.foodOverrides || {}) };
+  { const cu = cloud.foodUsage || {}, su = state.foodUsage || {}, out = { ...cu }; Object.keys(su).forEach(k => { out[k] = Math.max(out[k] || 0, su[k]); }); state.foodUsage = out; }
   _origSaveState();
 }
 async function pushCloud() {
@@ -5474,7 +5496,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v33 · 2026-07-05';
+const APP_VERSION = 'v34 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

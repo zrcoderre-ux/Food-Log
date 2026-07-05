@@ -94,12 +94,19 @@ your own project; the app only ever holds your project's *public* keys.
 
 ### 2. Connect the app
 
-1. In **Project Settings → API**, copy the **Project URL** and the **anon
-   public** key.
-2. In PlateIQ → Settings → **Cloud sync**, paste both, enter your email, and tap
-   **Send sign-in link**. Click the link in your email — you're signed in, and
-   your data syncs automatically from then on. Repeat on any other device to
-   share the same data.
+1. In PlateIQ → Settings → **Cloud sync**, enter your **email** and tap **Email
+   me a sign-in link**. (The project URL + publishable key are built in; use the
+   *Advanced* link only to point at a different project.)
+2. Sign in **without leaving the app** — clicking the link on a phone opens a
+   separate browser that can't sign the PWA in. Instead:
+   - **Easiest:** long-press the link in the email → **Copy Link** → paste into
+     the app's **Paste link & sign in** box.
+   - **Or** add `{{ .Token }}` to the *Magic Link* email template (Authentication
+     → Email Templates) so the email shows a 6-digit **code** to type in.
+   - **Or** use **phone/SMS**: set up an SMS provider (Authentication → Providers
+     → Phone, e.g. Twilio), then "Text me a code" in the app.
+
+   Repeat on any other device to share the same data.
 
 ### 3. Zero-touch Apple Health steps (iOS Shortcut)
 

@@ -2355,17 +2355,31 @@ function deleteFoodFromList(id) {
   if (typeof renderSwipeCard === 'function') renderSwipeCard();
   toast('Removed');
 }
-let microsEditId = null;
+let microsEditId = null, microsEditBase = null;
 const EDIT_MACROS = [ ['kcal', 'Calories', 'cal'], ['protein', 'Protein', 'g'], ['carbs', 'Carbs', 'g'], ['fat', 'Fat', 'g'] ];
+function parseServingNum(s) { const m = String(s == null ? '' : s).match(/(\d+(\.\d+)?)/); return m ? parseFloat(m[1]) : NaN; }
+function scaleServing() {
+  const b = microsEditBase; if (!b || !b.num) return;
+  const n = parseServingNum(document.getElementById('me-serving').value);
+  if (!n || n <= 0) return;
+  const r = n / b.num;
+  const put = (id, v, dec) => { const el = document.getElementById(id); if (el) el.value = dec ? Math.round(v * 10) / 10 : Math.round(v); };
+  put('me-kcal', b.kcal * r, false);
+  put('me-protein', b.protein * r, true);
+  put('me-carbs', b.carbs * r, true);
+  put('me-fat', b.fat * r, true);
+  NUTRIENTS.forEach(nt => { if (b.micros[nt.key] != null) { const el = document.getElementById('mi-' + nt.key); if (el) el.value = Math.round(b.micros[nt.key] * r * 100) / 100; } });
+}
 function openMicrosEditor(foodId) {
   ensureDataModel();
   const f = getFood(foodId); if (!f) return;
   microsEditId = foodId;
   const cur = foodMicros(f) || {};
+  microsEditBase = { num: parseServingNum(f.serving) || 1, kcal: +f.kcal || 0, protein: +f.protein || 0, carbs: +f.carbs || 0, fat: +f.fat || 0, micros: cur };
   document.getElementById('micros-title').textContent = f.name;
   document.getElementById('macro-fields').innerHTML =
-    `<div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Serving</label>
-       <input type="text" id="me-serving" value="${escapeHtml(f.serving || '')}" placeholder="1 serving" style="width:130px;"></div>` +
+    `<div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Serving <span style="color:var(--text3);font-weight:400;font-size:11px;">changing the amount rescales the values</span></label>
+       <input type="text" id="me-serving" value="${escapeHtml(f.serving || '')}" placeholder="1 serving" style="width:130px;" oninput="scaleServing()"></div>` +
     EDIT_MACROS.map(([k, label, unit]) => `
     <div class="settings-row" style="padding:6px 0;">
       <label style="flex:1;">${label} <span style="color:var(--text3);">(${unit})</span></label>
@@ -5460,7 +5474,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v32 · 2026-07-05';
+const APP_VERSION = 'v33 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

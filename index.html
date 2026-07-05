@@ -1441,13 +1441,6 @@ body {
         <div class="settings-row"><label>Code</label><input type="text" id="sb-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:100px;"></div>
         <button class="btn-secondary" style="margin-top:8px;" onclick="verifyEmailOtp()">Verify code</button>
 
-        <div class="settings-label" style="margin-top:18px;">Text me a code instead</div>
-        <p style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.5;">Requires an SMS provider set up in Supabase → Authentication → Providers → Phone (e.g. Twilio). See README.</p>
-        <div class="settings-row"><label>Phone</label><input type="tel" id="sb-phone" placeholder="+15551234567" style="width:150px;"></div>
-        <button class="btn-secondary" style="margin-top:8px;" onclick="sendPhoneOtp()">Text me a code</button>
-        <div class="settings-row" style="margin-top:8px;"><label>Code</label><input type="text" id="sb-phone-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:100px;"></div>
-        <button class="btn-secondary" style="margin-top:8px;" onclick="verifyPhoneOtp()">Verify &amp; sign in</button>
-
         <div style="font-size:11px;color:var(--text3);margin-top:14px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
       </div>
       <div id="sync-signedin" style="display:none;">
@@ -4671,35 +4664,6 @@ async function verifyPastedLink() {
     } else { toast('Link invalid or expired: ' + (j.msg || j.error_description || j.error || r.status)); }
   } catch (e) { toast('Couldn’t read that link — copy the entire URL from the email'); }
 }
-// Phone / SMS OTP (needs an SMS provider configured in Supabase).
-async function sendPhoneOtp() {
-  ensureDataModel();
-  const phone = (document.getElementById('sb-phone').value || '').trim();
-  if (!phone) { toast('Enter your phone number with country code, e.g. +1…'); return; }
-  state.sync.phone = phone; saveState();
-  try {
-    const r = await fetch(sbUrl('/auth/v1/otp'), { method: 'POST', headers: sbBaseHeaders(), body: JSON.stringify({ phone }) });
-    if (r.ok) toast('Texting you a 6-digit code…');
-    else { const j = await r.json().catch(() => ({})); toast('SMS failed: ' + (j.msg || j.error_description || r.status)); }
-  } catch (e) { toast('Network error sending SMS'); }
-}
-async function verifyPhoneOtp() {
-  ensureDataModel();
-  const phone = (document.getElementById('sb-phone').value || '').trim() || state.sync.phone;
-  const code = (document.getElementById('sb-phone-code').value || '').trim();
-  if (!phone || !code) { toast('Enter your phone number and the texted code'); return; }
-  try {
-    const r = await fetch(sbUrl('/auth/v1/verify'), {
-      method: 'POST', headers: sbBaseHeaders(), body: JSON.stringify({ type: 'sms', phone, token: code })
-    });
-    const j = await r.json();
-    if (r.ok && j.access_token) {
-      applySbSession(j);
-      if (!state.sync.userId) await sbFetchUser();
-      renderSyncSettings(); toast('Signed in ✓'); syncNow(false);
-    } else { toast('Code invalid or expired: ' + (j.msg || j.error_description || r.status)); }
-  } catch (e) { toast('Verification failed — check your connection'); }
-}
 function applySbSession(j) {
   ensureDataModel();
   state.sync.access = j.access_token;
@@ -5359,7 +5323,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v13 · 2026-07-05';
+const APP_VERSION = 'v14 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

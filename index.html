@@ -1985,6 +1985,14 @@ let state = {
 
 function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods]; }
 function getFood(id) { return allFoods().find(f => f.id === id); }
+// Icon for a food/entry: the product photo (from a scan) if present, else emoji.
+// Falls back to the emoji if the image fails to load.
+function foodIcon(o, px) {
+  px = px || 24;
+  const emoji = (o && o.emoji) ? o.emoji : '🍽️';
+  if (o && o.image) return `<img src="${escapeHtml(o.image)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:5px;vertical-align:middle;" onerror="this.replaceWith(document.createTextNode('${emoji}'))">`;
+  return emoji;
+}
 // Effective micronutrients for a food: its built-in data (USDA) merged with any
 // values the user typed (overrides win). Persisted, so future logs/scans carry them.
 function foodMicros(f) {
@@ -2246,7 +2254,7 @@ function renderFoodsList(filter) {
     const hasMicros = !!foodMicros(f);
     return `
     <div class="food-list-item">
-      <span class="fli-emoji">${f.emoji||'🍽️'}</span>
+      <span class="fli-emoji">${foodIcon(f, 26)}</span>
       <div class="fli-info" onclick="openMicrosEditor('${f.id}')" style="cursor:pointer;">
         <div class="fli-name">${escapeHtml(f.name)} ${hasMicros ? '🧬' : '<span style="color:var(--text3);font-weight:400;font-size:11px;">+ nutrients</span>'}</div>
         <div class="fli-macros">${f.serving||''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
@@ -2375,7 +2383,7 @@ function renderBuilder() {
     const f = getFood(item.foodId);
     if (!f) return '';
     return `<div class="meal-item">
-      <span class="mi-emoji">${f.emoji||'🍽️'}</span>
+      <span class="mi-emoji">${foodIcon(f, 24)}</span>
       <div class="mi-info">
         <div class="mi-name">${f.name}</div>
         <div class="mi-macros">${Math.round(f.kcal*item.qty)} cal · ${Math.round(f.protein*item.qty)}g P · ${Math.round(f.carbs*item.qty)}g C · ${Math.round(f.fat*item.qty)}g F</div>
@@ -2416,7 +2424,7 @@ function filterFoodPicker() {
   }
   el.innerHTML = foods.map(f => `
     <div class="food-pick-item" onclick="addFoodToMeal('${f.id}')">
-      <span class="fpi-emoji">${f.emoji||'🍽️'}</span>
+      <span class="fpi-emoji">${foodIcon(f, 22)}</span>
       <div class="fpi-info">
         <div class="fpi-name">${f.name}</div>
         <div class="fpi-macros">${f.serving} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
@@ -3510,7 +3518,7 @@ function renderBuilder() {
       const f = getFood(item.foodId);
       if (!f) return '';
       return `<div class="meal-item">
-        <span class="mi-emoji">${f.emoji || '🍽️'}</span>
+        <span class="mi-emoji">${foodIcon(f, 24)}</span>
         <div class="mi-info">
           <div class="mi-name">${f.name}</div>
           <div class="mi-macros">${Math.round(f.kcal * item.qty)} cal · ${Math.round(f.protein * item.qty)}g P · ${Math.round(f.carbs * item.qty)}g C · ${Math.round(f.fat * item.qty)}g F</div>
@@ -3721,7 +3729,7 @@ function renderDiaryMeals(key) {
       const ek = Math.round(e.kcal * e.qty);
       const qtyLabel = e.qty !== 1 ? (fmtQty(e.qty) + '× ') : '';
       return `<div class="diary-entry">
-        <span class="de-emoji">${e.emoji || '🍽️'}</span>
+        <span class="de-emoji">${foodIcon(e, 18)}</span>
         <div class="de-main" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;"><div class="de-name">${escapeHtml(e.name)}</div>
           <div class="de-sub">${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)} · tap to edit</div></div>
         <span class="de-kcal" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;">${ek}</span>
@@ -3747,7 +3755,7 @@ function editDiaryEntry(key, id) {
   logTargetSlot = e.slot;
   openQtyModal({
     kind: e.kind, refId: e.refId, name: e.name, emoji: e.emoji, serving: e.serving,
-    kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat, micros: e.micros || null,
+    kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat, micros: e.micros || null, image: e.image || null,
     defaultQty: e.qty, editKey: key, editId: id
   });
 }
@@ -3785,7 +3793,7 @@ function renderLogSearch() {
   foods.sort((a, b) => (state.ratings[b.id] === 'yes' ? 1 : 0) - (state.ratings[a.id] === 'yes' ? 1 : 0));
   const list = document.getElementById('log-search-list');
   const localHtml = foods.slice(0, 40).map(f =>
-    pickRow(`logFood('${f.id}')`, f.emoji || '🍽️', f.name, `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
+    pickRow(`logFood('${f.id}')`, foodIcon(f, 20), f.name, `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
   ).join('');
 
   if (offSearchTimer) clearTimeout(offSearchTimer);
@@ -3809,12 +3817,12 @@ function offToFood(p) {
   const serving = perServing && p.serving_size ? p.serving_size : (perServing ? '1 serving' : '100 g');
   const brand = p.brands ? p.brands.split(',')[0].trim() : '';
   const id = p.code ? 'bc' + p.code : 'off' + Math.abs(hashStr((p.product_name || '') + brand));
-  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand };
+  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '' };
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 async function offSearch(q) {
   const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
-    '&search_simple=1&action=process&json=1&page_size=25&fields=code,product_name,brands,nutriments,serving_size';
+    '&search_simple=1&action=process&json=1&page_size=25&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url';
   const r = await fetch(url);
   const j = await r.json();
   return (j.products || [])
@@ -3857,7 +3865,7 @@ async function searchDatabases(q, seq) {
   }
   merged.forEach(f => { offCache[f.id] = f; });
   el.innerHTML = merged.slice(0, 40).map(f =>
-    pickRow(`logOff('${f.id}')`, f.emoji, f.name + (f.brand ? ' · ' + f.brand : ''),
+    pickRow(`logOff('${f.id}')`, foodIcon(f, 20), f.name + (f.brand ? ' · ' + f.brand : ''),
       `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
   ).join('');
 }
@@ -3865,7 +3873,7 @@ function logOff(id) {
   const f = offCache[id]; if (!f) return;
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), image: f.image || null, defaultQty: 1 });
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -3881,7 +3889,7 @@ function renderLogRecipes() {
 }
 function logFood(id) {
   const f = getFood(id); if (!f) return;
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), image: f.image || null, defaultQty: 1 });
 }
 function logMeal(i) {
   const m = state.savedMeals[i]; if (!m) return;
@@ -3935,7 +3943,7 @@ function confirmLog() {
   if (!state.diary[key]) state.diary[key] = { entries: [] };
   state.diary[key].entries.push({
     id: 'e' + Date.now() + Math.round(Math.random() * 9999),
-    kind: p.kind, refId: p.refId || null, name: p.name, emoji: p.emoji || '🍽️',
+    kind: p.kind, refId: p.refId || null, name: p.name, emoji: p.emoji || '🍽️', image: p.image || null,
     slot, qty, serving: p.serving || '',
     kcal: p.kcal, protein: p.protein, carbs: p.carbs, fat: p.fat,
     micros: p.micros || null
@@ -4056,11 +4064,16 @@ async function lookupBarcode(code) {
     const serving = perServing && p.serving_size ? p.serving_size : (perServing ? '1 serving' : '100 g');
     const name = (p.product_name || 'Scanned item').trim();
     const fid = 'bc' + code;
+    const img = p.image_small_url || p.image_front_thumb_url || '';
     ensureDataModel();
-    if (!state.customFoods.find(f => f.id === fid)) {
-      state.customFoods.push({ id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code });
+    let food = state.customFoods.find(f => f.id === fid);
+    if (!food) {
+      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img };
+      state.customFoods.push(food);
+    } else if (img && !food.image) {
+      food.image = img; // backfill photo for a previously-scanned item
     }
-    const result = { fid, name, brand: p.brands || '', img: p.image_small_url || p.image_front_thumb_url || '', serving, kcal, protein, carbs, fat };
+    const result = { fid, name, brand: p.brands || '', img, serving, kcal, protein, carbs, fat };
     if (scanMode === 'willeat') {
       state.ratings[fid] = 'yes'; // add straight to the Will-Eat pool
       saveState();
@@ -5104,7 +5117,7 @@ function openRecommend() {
     .sort((a, b) => b.score - a.score).slice(0, 8);
 
   list.innerHTML = (scored.map(({ f }) => `<div class="rec-item" onclick="logFood('${f.id}')">
-      <span class="ri-emoji">${f.emoji || '🍽️'}</span>
+      <span class="ri-emoji">${foodIcon(f, 28)}</span>
       <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
         <div class="ri-why">${recWhy(f, ctx)}</div>
         <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
@@ -5225,7 +5238,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v26 · 2026-07-05';
+const APP_VERSION = 'v27 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -1433,7 +1433,7 @@ body {
       </div>
       <div id="sync-signedout">
         <div class="settings-row"><label>Email</label><input type="email" id="sb-email" placeholder="you@email.com" style="width:170px;"></div>
-        <button class="btn-primary" style="margin-top:10px;" onclick="sendMagicLink()">Email me a sign-in link</button>
+        <button class="btn-primary" id="sb-send-btn" style="margin-top:10px;" onclick="sendMagicLink()">Email me a sign-in link</button>
         <p style="font-size:12px;color:var(--text2);margin:12px 0 6px;line-height:1.5;"><b>Easiest:</b> in the email, <b>long-press the sign-in link → Copy Link</b>, then paste it here (this signs the app in without opening another browser):</p>
         <textarea id="sb-link" placeholder="https://…supabase.co/auth/v1/verify?token=…" style="width:100%;height:54px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:12px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;"></textarea>
         <button class="btn-secondary" style="margin-top:6px;" onclick="verifyPastedLink()">Paste link &amp; sign in</button>
@@ -4604,9 +4604,25 @@ async function sendMagicLink() {
       method: 'POST', headers: sbBaseHeaders(),
       body: JSON.stringify({ email, create_user: true })
     });
-    if (r.ok) toast('Check your email for the 6-digit code');
-    else { const j = await r.json().catch(() => ({})); toast('Sign-in failed: ' + (j.msg || j.error_description || r.status)); }
-  } catch (e) { toast('Network error sending code'); }
+    if (r.ok) { toast('Sent! Check your email, then paste the link below'); startSendCooldown(60); }
+    else {
+      const j = await r.json().catch(() => ({}));
+      const msg = j.msg || j.error_description || ('HTTP ' + r.status);
+      toast('Email failed: ' + msg);
+      if (r.status === 429 || /rate.?limit/i.test(msg)) startSendCooldown(60);
+    }
+  } catch (e) { toast('Network error sending email'); }
+}
+let sendCooldownTimer = null;
+function startSendCooldown(sec) {
+  const btn = document.getElementById('sb-send-btn'); if (!btn) return;
+  if (sendCooldownTimer) clearInterval(sendCooldownTimer);
+  let left = sec;
+  btn.disabled = true; btn.style.opacity = '0.55'; btn.style.pointerEvents = 'none';
+  const done = () => { clearInterval(sendCooldownTimer); sendCooldownTimer = null; btn.disabled = false; btn.style.opacity = ''; btn.style.pointerEvents = ''; btn.textContent = 'Email me a sign-in link'; };
+  const tick = () => { if (left <= 0) return done(); btn.textContent = 'Sent — wait ' + left + 's'; left--; };
+  tick();
+  sendCooldownTimer = setInterval(tick, 1000);
 }
 async function verifyEmailOtp() {
   ensureDataModel();
@@ -5323,7 +5339,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v14 · 2026-07-05';
+const APP_VERSION = 'v15 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

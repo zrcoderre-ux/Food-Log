@@ -1166,6 +1166,9 @@ body {
       </div>
       <button style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent);font-family:'DM Sans',sans-serif;font-weight:500;" onclick="showView('swipe')">+ Swipe</button>
     </div>
+    <div style="padding:0 16px 10px;">
+      <input type="text" class="food-search" id="foods-add-search" placeholder="Search foods to add (USDA + Open Food Facts)…" oninput="searchFoodsToAdd()">
+    </div>
     <div class="foods-list" id="foods-list"></div>
     <div style="padding:16px;display:flex;flex-direction:column;gap:8px;">
       <button class="btn-secondary" onclick="openScanner('willeat')">📷 Scan a barcode to add a food</button>
@@ -2266,12 +2269,14 @@ function setupDrag() {
 function showView(v) {
   document.getElementById('swipe-view').style.display = v==='swipe' ? 'block' : 'none';
   document.getElementById('list-view').style.display = v==='list' ? 'block' : 'none';
+  const sb = document.getElementById('foods-add-search'); if (sb) sb.value = '';
   if (v==='list') renderFoodsList('yes');
 }
 
 let currentListFilter = 'yes';
 function filterList(f, el) {
   currentListFilter = f;
+  const sb = document.getElementById('foods-add-search'); if (sb) sb.value = '';
   document.querySelectorAll('#list-view .foods-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   renderFoodsList(f);
@@ -2300,6 +2305,44 @@ function renderFoodsList(filter) {
       <span onclick="deleteFoodFromList('${f.id}')" title="Delete" style="cursor:pointer;padding:4px 6px;color:var(--text3);font-size:15px;">🗑</span>
     </div>`;
   }).join('');
+}
+let foodsAddTimer = null;
+function foodAddRow(f, already) {
+  return `<div class="food-list-item">
+    <span class="fli-emoji">${foodIcon(f, 26)}</span>
+    <div class="fli-info"><div class="fli-name">${escapeHtml(f.name)}${f.brand ? ' · ' + escapeHtml(f.brand) : ''}</div>
+      <div class="fli-macros">${f.serving || ''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div></div>
+    ${already ? '<span class="fli-badge badge-yes">✓ eat</span>'
+      : `<span onclick="addLocalToWillEat('${f.id}')" style="cursor:pointer;color:var(--accent);font-weight:600;padding:4px 8px;white-space:nowrap;">＋ add</span>`}
+  </div>`;
+}
+function searchFoodsToAdd() {
+  const q = (document.getElementById('foods-add-search').value || '').toLowerCase().trim();
+  if (foodsAddTimer) clearTimeout(foodsAddTimer);
+  if (q.length < 2) { renderFoodsList(currentListFilter); return; }
+  const el = document.getElementById('foods-list');
+  const locals = allFoods().filter(f => f.name.toLowerCase().includes(q)).slice(0, 20);
+  const localHtml = locals.map(f => foodAddRow(f, state.ratings[f.id] === 'yes')).join('');
+  el.innerHTML = (localHtml ? `<div class="log-db-head">Your foods</div>${localHtml}` : '') +
+    `<div class="log-db-head">Food database (USDA + Open Food Facts)</div><div id="foods-add-db"><div class="rec-empty" style="padding:12px;">Searching…</div></div>`;
+  const seq = ++offSearchSeq;
+  foodsAddTimer = setTimeout(() => searchDatabasesInto('foods-add-db', q, seq, 'addOffToWillEat'), 350);
+}
+function addLocalToWillEat(id) {
+  ensureDataModel();
+  state.ratings[id] = 'yes';
+  saveState();
+  searchFoodsToAdd();
+  toast('Added to Will-Eat');
+}
+function addOffToWillEat(id) {
+  const f = offCache[id]; if (!f) return;
+  ensureDataModel();
+  if (!state.customFoods.find(x => x.id === f.id)) state.customFoods.push(f);
+  state.ratings[f.id] = 'yes';
+  saveState();
+  searchFoodsToAdd();
+  toast('Added to Will-Eat');
 }
 function deleteFoodFromList(id) {
   if (!confirm('Remove this food from your lists? This can’t be undone.')) return;
@@ -5417,7 +5460,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v31 · 2026-07-05';
+const APP_VERSION = 'v32 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

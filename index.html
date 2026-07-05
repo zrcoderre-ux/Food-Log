@@ -5060,7 +5060,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v21 · 2026-07-05';
+const APP_VERSION = 'v22 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');
@@ -5106,6 +5106,21 @@ renderDiary();
 const _vEl = document.getElementById('app-version'); if (_vEl) _vEl.textContent = APP_VERSION;
 // If Google Health is still authorized, refresh today's steps on load.
 if (ghValid()) syncGoogleHealthToday(false);
+
+// Auto-sync when the app is reopened from the background (installed PWAs stay
+// alive, so the boot code above doesn't re-run). Debounced so quick tab
+// switches don't hammer the APIs.
+let lastResyncT = Date.now();
+function resyncOnResume() {
+  if (document.hidden) return;
+  const now = Date.now();
+  if (now - lastResyncT < 90000) return; // at most once every ~90s
+  lastResyncT = now;
+  if (ghValid()) syncGoogleHealthToday(false);
+  if (sbAuthed()) syncNow(true);
+}
+document.addEventListener('visibilitychange', resyncOnResume);
+window.addEventListener('focus', resyncOnResume);
 
 // Energy check-ins: handle a notification tap, listen for SW messages, and poll.
 handleEnergyHash();

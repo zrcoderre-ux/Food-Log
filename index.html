@@ -1470,8 +1470,11 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Food database (USDA)</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Add USDA FoodData Central for high-quality whole-food nutrition (great for generic items like “chicken breast” or “brown rice”). Get a free API key at <b>fdc.nal.usda.gov/api-key-signup.html</b> and paste it below — it’s then searched alongside Open Food Facts, with USDA results shown first.</p>
-      <div class="settings-row"><label>USDA API key</label><input type="text" id="usda-key" placeholder="paste key" style="width:170px;" onchange="saveUsdaKey()"></div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">✅ Built-in USDA FoodData Central is active — whole-food nutrition (great for items like “chicken breast”) is searched alongside Open Food Facts, USDA first.</p>
+      <div style="font-size:11px;color:var(--text3);cursor:pointer;" onclick="toggleUsdaAdvanced()">Advanced — use your own API key ▾</div>
+      <div id="usda-config-rows" style="display:none;margin-top:8px;">
+        <div class="settings-row"><label>USDA API key</label><input type="text" id="usda-key" placeholder="(built-in default)" style="width:170px;" onchange="saveUsdaKey()"></div>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -3936,9 +3939,11 @@ function usdaToFood(item) {
   const id = 'usda' + item.fdcId;
   return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda', micros: usdaMicros(arr) };
 }
+const DEFAULT_USDA_KEY = 'TLNI4WjqXvsXYKciNerLPn687IfzVxwbgELZEVhi';
+function usdaKey() { ensureDataModel(); return (state.usda.apiKey || DEFAULT_USDA_KEY || '').trim(); }
 async function usdaSearch(q) {
-  if (!(state.usda && state.usda.apiKey)) return [];
-  const url = 'https://api.nal.usda.gov/fdc/v1/foods/search?api_key=' + encodeURIComponent(state.usda.apiKey) +
+  if (!usdaKey()) return [];
+  const url = 'https://api.nal.usda.gov/fdc/v1/foods/search?api_key=' + encodeURIComponent(usdaKey()) +
     '&query=' + encodeURIComponent(q) + '&pageSize=20&dataType=Foundation,SR%20Legacy,Branded';
   const r = await fetch(url);
   if (!r.ok) return [];
@@ -3980,6 +3985,10 @@ function saveUsdaKey() {
 function renderUsdaSettings() {
   ensureDataModel();
   const el = document.getElementById('usda-key'); if (el) el.value = state.usda.apiKey || '';
+}
+function toggleUsdaAdvanced() {
+  const el = document.getElementById('usda-config-rows');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -5350,7 +5359,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v12 · 2026-07-05';
+const APP_VERSION = 'v13 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

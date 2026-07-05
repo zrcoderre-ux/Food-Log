@@ -1159,7 +1159,7 @@ body {
     <div id="build-view">
       <div class="goal-banner" style="margin-bottom:14px;">
         <div class="goal-banner-left">
-          <strong id="meal-kcal-used">0 kcal</strong>
+          <strong id="meal-kcal-used">0 cal</strong>
           Current meal
         </div>
         <div class="goal-banner-right">
@@ -1364,7 +1364,7 @@ body {
     <div class="settings-section">
       <div class="settings-label">Calculated targets</div>
       <div class="targets-grid">
-        <div class="target-card"><div class="target-val" id="t-kcal">—</div><div class="target-lbl">kcal</div></div>
+        <div class="target-card"><div class="target-val" id="t-kcal">—</div><div class="target-lbl">cal</div></div>
         <div class="target-card"><div class="target-val" id="t-protein">—</div><div class="target-lbl">protein g</div></div>
         <div class="target-card"><div class="target-val" id="t-carbs">—</div><div class="target-lbl">carbs g</div></div>
         <div class="target-card"><div class="target-val" id="t-fat">—</div><div class="target-lbl">fat g</div></div>
@@ -1711,7 +1711,7 @@ body {
         <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
       </select>
     </div>
-    <button class="btn-primary" onclick="confirmLog()">Add to diary</button>
+    <button class="btn-primary" id="qty-confirm-btn" onclick="confirmLog()">Add to diary</button>
     <button class="btn-secondary" onclick="closeModal('qty-modal')">Cancel</button>
   </div>
 </div>
@@ -2007,7 +2007,7 @@ function updateTargetDisplay() {
   document.getElementById('t-protein').textContent = t.protein;
   document.getElementById('t-carbs').textContent = t.carbs;
   document.getElementById('t-fat').textContent = t.fat;
-  document.getElementById('daily-target-display').textContent = t.kcal.toLocaleString() + ' kcal';
+  document.getElementById('daily-target-display').textContent = t.kcal.toLocaleString() + ' cal';
   const perMeal = Math.round(t.kcal / state.settings.mealsPerDay);
   document.getElementById('mc-protein-target').textContent = '/ ' + Math.round(t.protein/state.settings.mealsPerDay) + 'g';
   document.getElementById('mc-carbs-target').textContent = '/ ' + Math.round(t.carbs/state.settings.mealsPerDay) + 'g';
@@ -2127,7 +2127,7 @@ function renderSwipeCard() {
   const tagsEl = document.getElementById('card-tags');
   tagsEl.innerHTML = (food.tags || []).map(t=>`<span class="card-tag">${t}</span>`).join('');
   document.getElementById('card-macros').innerHTML = `
-    <span><b>${food.kcal}</b>kcal</span>
+    <span><b>${food.kcal}</b>cal</span>
     <span><b>${food.protein}g</b>protein</span>
     <span><b>${food.carbs}g</b>carbs</span>
     <span><b>${food.fat}g</b>fat</span>
@@ -2224,7 +2224,7 @@ function renderFoodsList(filter) {
       <span class="fli-emoji">${f.emoji||'🍽️'}</span>
       <div class="fli-info">
         <div class="fli-name">${f.name}</div>
-        <div class="fli-macros">${f.serving||''} · ${f.kcal} kcal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
+        <div class="fli-macros">${f.serving||''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
       </div>
       <span class="fli-badge ${state.ratings[f.id]==='yes'?'badge-yes':'badge-no'}">${state.ratings[f.id]==='yes'?'✓ eat':'✕ skip'}</span>
     </div>
@@ -2292,7 +2292,7 @@ function renderBuilder() {
   const m = calcMealMacros();
   const t = calcTDEE();
   const mpt = state.settings.mealsPerDay;
-  document.getElementById('meal-kcal-used').textContent = m.kcal + ' kcal';
+  document.getElementById('meal-kcal-used').textContent = m.kcal + ' cal';
   document.getElementById('mc-protein').textContent = m.protein + 'g';
   document.getElementById('mc-carbs').textContent = m.carbs + 'g';
   document.getElementById('mc-fat').textContent = m.fat + 'g';
@@ -2312,7 +2312,7 @@ function renderBuilder() {
       <span class="mi-emoji">${f.emoji||'🍽️'}</span>
       <div class="mi-info">
         <div class="mi-name">${f.name}</div>
-        <div class="mi-macros">${Math.round(f.kcal*item.qty)} kcal · ${Math.round(f.protein*item.qty)}g P · ${Math.round(f.carbs*item.qty)}g C · ${Math.round(f.fat*item.qty)}g F</div>
+        <div class="mi-macros">${Math.round(f.kcal*item.qty)} cal · ${Math.round(f.protein*item.qty)}g P · ${Math.round(f.carbs*item.qty)}g C · ${Math.round(f.fat*item.qty)}g F</div>
       </div>
       <div class="mi-qty">
         <div class="qty-btn" onclick="adjustQty(${i},-1)">−</div>
@@ -2353,7 +2353,7 @@ function filterFoodPicker() {
       <span class="fpi-emoji">${f.emoji||'🍽️'}</span>
       <div class="fpi-info">
         <div class="fpi-name">${f.name}</div>
-        <div class="fpi-macros">${f.serving} · ${f.kcal} kcal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
+        <div class="fpi-macros">${f.serving} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
       </div>
       <span class="fpi-add">+</span>
     </div>
@@ -2394,7 +2394,7 @@ function renderSavedMeals() {
     <div class="saved-meal-card">
       <div class="smc-header">
         <span class="smc-name">${meal.name}</span>
-        <span class="smc-cals">${meal.kcal} kcal</span>
+        <span class="smc-cals">${meal.kcal} cal</span>
       </div>
       <div class="smc-macros" style="margin-bottom:8px;">P:${meal.protein}g · C:${meal.carbs}g · F:${meal.fat}g · ${meal.items.length} foods</div>
       <div class="smc-actions">
@@ -2483,7 +2483,7 @@ function renderWeekSummary(days) {
   document.getElementById('week-summary').innerHTML = `
     <div class="ws-macro">
       <div class="ws-val">${avg.kcal.toLocaleString()}</div>
-      <div class="ws-lbl">kcal/day</div>
+      <div class="ws-lbl">cal/day</div>
       <div class="ws-bar-wrap"><div style="height:4px;border-radius:2px;background:var(--accent);width:${Math.min(avg.kcal/t.kcal*100,100)}%"></div></div>
     </div>
     <div class="ws-macro">
@@ -2535,7 +2535,7 @@ function renderDays(days) {
           <span class="day-name">${dayNames[di]}${isToday?' 📍':''}</span>
           <span class="day-date">${d.toLocaleDateString('en',{month:'short',day:'numeric'})}</span>
         </div>
-        <span class="day-cals ${calClass}">${dayKcal>0?dayKcal+' kcal':'—'}</span>
+        <span class="day-cals ${calClass}">${dayKcal>0?dayKcal+' cal':'—'}</span>
       </div>
       <div class="day-macro-bar">
         <div class="dmb-seg" style="background:var(--accent);flex:${dayP}"></div>
@@ -2557,7 +2557,7 @@ function renderDays(days) {
             <span class="dmr-type">${slot.slotName}</span>
             ${named
               ? `<span class="dmr-foods">${isRecipe?'📄 ':''}${named.name}</span>
-                 <span class="dmr-cals">${macros.kcal>0?macros.kcal+' kcal':''}</span>
+                 <span class="dmr-cals">${macros.kcal>0?macros.kcal+' cal':''}</span>
                  <span class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')">↻</span>`
               : `<span class="dmr-foods" style="color:var(--text3)">Empty</span>
                  <span class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')">+ Add</span>`}
@@ -2874,7 +2874,7 @@ function renderHistoryNutrition() {
   };
   const t = calcTDEE();
   document.getElementById('mfp-avg-summary').innerHTML = `
-    <div class="ws-macro"><div class="ws-val">${avg.kcal.toLocaleString()}</div><div class="ws-lbl">avg kcal</div><div class="ws-bar-wrap"><div style="height:4px;border-radius:2px;background:var(--accent);width:${Math.min(avg.kcal/t.kcal*100,100)}%"></div></div></div>
+    <div class="ws-macro"><div class="ws-val">${avg.kcal.toLocaleString()}</div><div class="ws-lbl">avg cal</div><div class="ws-bar-wrap"><div style="height:4px;border-radius:2px;background:var(--accent);width:${Math.min(avg.kcal/t.kcal*100,100)}%"></div></div></div>
     <div class="ws-macro"><div class="ws-val">${avg.protein}g</div><div class="ws-lbl">avg protein</div><div class="ws-bar-wrap"><div style="height:4px;border-radius:2px;background:var(--accent);width:${Math.min(avg.protein/t.protein*100,100)}%"></div></div></div>
     <div class="ws-macro"><div class="ws-val">${avg.carbs}g</div><div class="ws-lbl">avg carbs</div><div class="ws-bar-wrap"><div style="height:4px;border-radius:2px;background:var(--carb);width:${Math.min(avg.carbs/t.carbs*100,100)}%"></div></div></div>
     <div class="ws-macro"><div class="ws-val">${avg.fat}g</div><div class="ws-lbl">avg fat</div><div class="ws-bar-wrap"><div style="height:4px;border-radius:2px;background:var(--fat);width:${Math.min(avg.fat/t.fat*100,100)}%"></div></div></div>
@@ -2891,7 +2891,7 @@ function renderHistoryNutrition() {
           <span class="day-name">${d.date}</span>
           <span class="day-date">${d.meals||''}</span>
         </div>
-        <span class="day-cals ${d.kcal>t.kcal*1.1?'over':'ok'}">${d.kcal.toLocaleString()} kcal</span>
+        <span class="day-cals ${d.kcal>t.kcal*1.1?'over':'ok'}">${d.kcal.toLocaleString()} cal</span>
       </div>
       <div class="day-macro-bar">
         <div class="dmb-seg" style="background:var(--accent);flex:${d.protein||1}"></div>
@@ -2923,7 +2923,7 @@ function renderHistoryExercise() {
     return `<div class="day-card" style="margin-bottom:8px;">
       <div class="day-header-row" style="cursor:default;">
         <span class="day-name">${date}</span>
-        <span style="font-size:12px;color:var(--accent);font-weight:600;">${totalCal>0?'-'+totalCal+' kcal':''}</span>
+        <span style="font-size:12px;color:var(--accent);font-weight:600;">${totalCal>0?'-'+totalCal+' cal':''}</span>
       </div>
       ${entries.map(e=>`<div class="day-meal-row">
         <div class="dmr-dot" style="background:var(--carb);"></div>
@@ -2970,7 +2970,7 @@ function smartQty(kcalPerUnit) {
   const mpt = state.settings.mealsPerDay;
   const perMealTarget = t.kcal / mpt;
 
-  // How many kcal already in the current meal?
+  // How many cal already in the current meal?
   const usedKcal = state.currentMeal.reduce((sum, item) => {
     const f = getFood(item.foodId);
     const r = state.recipes.find(r => r.id === item.recipeId);
@@ -3244,12 +3244,12 @@ function renderRecipesList() {
   empty.style.display = 'none';
   el.innerHTML = state.recipes.map((r, i) => {
     const macroStr = r.kcal
-      ? `${r.kcal} kcal/serving · P:${r.protein||'?'}g C:${r.carbs||'?'}g F:${r.fat||'?'}g`
+      ? `${r.kcal} cal/serving · P:${r.protein||'?'}g C:${r.carbs||'?'}g F:${r.fat||'?'}g`
       : 'Macros not set';
     return `<div class="recipe-card" onclick="openRecipeView('${r.id}')">
       <div class="rc-header">
         <div class="rc-name">📄 ${r.name}</div>
-        ${r.kcal ? `<div class="rc-cals">${r.kcal} kcal</div>` : ''}
+        ${r.kcal ? `<div class="rc-cals">${r.kcal} cal</div>` : ''}
       </div>
       ${r.source ? `<div class="rc-source">${r.source}</div>` : ''}
       <div class="rc-macros">${macroStr} · ${r.servings} serving${r.servings>1?'s':''}</div>
@@ -3275,7 +3275,7 @@ function openRecipeView(recipeId) {
 
   // Macro chips
   const chips = [];
-  if (r.kcal)    chips.push(`<div class="macro-card" style="flex:1;padding:8px;"><div class="mc-val">${r.kcal}</div><div class="mc-target">kcal</div></div>`);
+  if (r.kcal)    chips.push(`<div class="macro-card" style="flex:1;padding:8px;"><div class="mc-val">${r.kcal}</div><div class="mc-target">cal</div></div>`);
   if (r.protein) chips.push(`<div class="macro-card" style="flex:1;padding:8px;"><div class="mc-val">${r.protein}g</div><div class="mc-target">protein</div></div>`);
   if (r.carbs)   chips.push(`<div class="macro-card" style="flex:1;padding:8px;"><div class="mc-val">${r.carbs}g</div><div class="mc-target">carbs</div></div>`);
   if (r.fat)     chips.push(`<div class="macro-card" style="flex:1;padding:8px;"><div class="mc-val">${r.fat}g</div><div class="mc-target">fat</div></div>`);
@@ -3396,7 +3396,7 @@ function renderBuilder() {
   const perMealC = Math.round(t.carbs / mpt);
   const perMealF = Math.round(t.fat / mpt);
 
-  document.getElementById('meal-kcal-used').textContent = m.kcal + ' kcal';
+  document.getElementById('meal-kcal-used').textContent = m.kcal + ' cal';
   document.getElementById('mc-protein').textContent = m.protein + 'g';
   document.getElementById('mc-carbs').textContent = m.carbs + 'g';
   document.getElementById('mc-fat').textContent = m.fat + 'g';
@@ -3409,7 +3409,7 @@ function renderBuilder() {
 
   // Calorie fill ring on banner
   const perMealKcal = Math.round(t.kcal / mpt);
-  document.getElementById('daily-target-display').textContent = t.kcal.toLocaleString() + ' kcal';
+  document.getElementById('daily-target-display').textContent = t.kcal.toLocaleString() + ' cal';
 
   const el = document.getElementById('meal-items');
   if (state.currentMeal.length === 0) {
@@ -3429,7 +3429,7 @@ function renderBuilder() {
         <span class="mi-emoji">📄</span>
         <div class="mi-info">
           <div class="mi-name">${r.name}</div>
-          <div class="mi-macros">${qtyLabel} · ${itemKcal} kcal · ${itemP}g P · ${itemC}g C · ${itemF}g F
+          <div class="mi-macros">${qtyLabel} · ${itemKcal} cal · ${itemP}g P · ${itemC}g C · ${itemF}g F
             ${r.estimated ? ' <span style="font-size:9px;color:var(--fat);">est.</span>' : ''}
           </div>
         </div>
@@ -3447,7 +3447,7 @@ function renderBuilder() {
         <span class="mi-emoji">${f.emoji || '🍽️'}</span>
         <div class="mi-info">
           <div class="mi-name">${f.name}</div>
-          <div class="mi-macros">${Math.round(f.kcal * item.qty)} kcal · ${Math.round(f.protein * item.qty)}g P · ${Math.round(f.carbs * item.qty)}g C · ${Math.round(f.fat * item.qty)}g F</div>
+          <div class="mi-macros">${Math.round(f.kcal * item.qty)} cal · ${Math.round(f.protein * item.qty)}g P · ${Math.round(f.carbs * item.qty)}g C · ${Math.round(f.fat * item.qty)}g F</div>
         </div>
         <div class="mi-qty">
           <div class="qty-btn" onclick="adjustQty(${i}, -1)">−</div>
@@ -3501,7 +3501,7 @@ function openMealAssign(dk, slotName) {
         <span class="fpi-emoji">🍽️</span>
         <div class="fpi-info">
           <div class="fpi-name">${meal.name}</div>
-          <div class="fpi-macros">${meal.kcal} kcal · P:${meal.protein}g C:${meal.carbs}g F:${meal.fat}g</div>
+          <div class="fpi-macros">${meal.kcal} cal · P:${meal.protein}g C:${meal.carbs}g F:${meal.fat}g</div>
         </div>
         <span class="fpi-add">+</span>
       </div>`).join('');
@@ -3511,7 +3511,7 @@ function openMealAssign(dk, slotName) {
         <span class="fpi-emoji">📄</span>
         <div class="fpi-info">
           <div class="fpi-name">${r.name}</div>
-          <div class="fpi-macros">${r.kcal ? r.kcal + ' kcal/serving' : 'Macros not set'}${r.estimated ? ' · est.' : ''}</div>
+          <div class="fpi-macros">${r.kcal ? r.kcal + ' cal/serving' : 'Macros not set'}${r.estimated ? ' · est.' : ''}</div>
         </div>
         <span class="fpi-add">+</span>
       </div>`).join('');
@@ -3655,14 +3655,14 @@ function renderDiaryMeals(key) {
       const qtyLabel = e.qty !== 1 ? (fmtQty(e.qty) + '× ') : '';
       return `<div class="diary-entry">
         <span class="de-emoji">${e.emoji || '🍽️'}</span>
-        <div class="de-main"><div class="de-name">${escapeHtml(e.name)}</div>
-          <div class="de-sub">${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)}</div></div>
-        <span class="de-kcal">${ek}</span>
+        <div class="de-main" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;"><div class="de-name">${escapeHtml(e.name)}</div>
+          <div class="de-sub">${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)} · tap to edit</div></div>
+        <span class="de-kcal" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;">${ek}</span>
         <span class="de-del" onclick="removeDiaryEntry('${key}','${e.id}')">✕</span>
       </div>`;
     }).join('');
     return `<div class="diary-meal">
-      <div class="diary-meal-head"><span class="dm-name">${slot}</span><span class="dm-kcal">${kcal} kcal</span></div>
+      <div class="diary-meal-head"><span class="dm-name">${slot}</span><span class="dm-kcal">${kcal} cal</span></div>
       ${rows}
       <button class="diary-add-btn" onclick="openLogModal('${slot}')">＋ Add food</button>
     </div>`;
@@ -3672,6 +3672,17 @@ function removeDiaryEntry(key, id) {
   const d = state.diary[key]; if (!d) return;
   d.entries = d.entries.filter(e => e.id !== id);
   saveState(); renderDiary();
+}
+function editDiaryEntry(key, id) {
+  ensureDataModel();
+  const d = state.diary[key]; if (!d) return;
+  const e = d.entries.find(x => x.id === id); if (!e) return;
+  logTargetSlot = e.slot;
+  openQtyModal({
+    kind: e.kind, refId: e.refId, name: e.name, emoji: e.emoji, serving: e.serving,
+    kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat, micros: e.micros || null,
+    defaultQty: e.qty, editKey: key, editId: id
+  });
 }
 
 // ── Log flow ─────────────────────────────────────────────────────────────────
@@ -3707,7 +3718,7 @@ function renderLogSearch() {
   foods.sort((a, b) => (state.ratings[b.id] === 'yes' ? 1 : 0) - (state.ratings[a.id] === 'yes' ? 1 : 0));
   const list = document.getElementById('log-search-list');
   const localHtml = foods.slice(0, 40).map(f =>
-    pickRow(`logFood('${f.id}')`, f.emoji || '🍽️', f.name, `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`)
+    pickRow(`logFood('${f.id}')`, f.emoji || '🍽️', f.name, `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
   ).join('');
 
   if (offSearchTimer) clearTimeout(offSearchTimer);
@@ -3780,7 +3791,7 @@ async function searchDatabases(q, seq) {
   merged.forEach(f => { offCache[f.id] = f; });
   el.innerHTML = merged.slice(0, 40).map(f =>
     pickRow(`logOff('${f.id}')`, f.emoji, f.name + (f.brand ? ' · ' + f.brand : ''),
-      `${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}`)
+      `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
   ).join('');
 }
 function logOff(id) {
@@ -3792,13 +3803,13 @@ function logOff(id) {
 function renderLogMeals() {
   const meals = state.savedMeals || [];
   document.getElementById('log-meals-list').innerHTML = meals.length
-    ? meals.map((m, i) => pickRow(`logMeal(${i})`, '🍽️', m.name, `${m.kcal} kcal · P${m.protein} C${m.carbs} F${m.fat}`)).join('')
+    ? meals.map((m, i) => pickRow(`logMeal(${i})`, '🍽️', m.name, `${m.kcal} cal · P${m.protein} C${m.carbs} F${m.fat}`)).join('')
     : '<div class="rec-empty">No saved meals yet. Build one in the Meal tab.</div>';
 }
 function renderLogRecipes() {
   const recs = state.recipes || [];
   document.getElementById('log-recipes-list').innerHTML = recs.length
-    ? recs.map(r => pickRow(`logRecipe('${r.id}')`, '📖', r.name, `${r.kcal || 0} kcal · P${r.protein || 0} C${r.carbs || 0} F${r.fat || 0} · per serving`)).join('')
+    ? recs.map(r => pickRow(`logRecipe('${r.id}')`, '📖', r.name, `${r.kcal || 0} cal · P${r.protein || 0} C${r.carbs || 0} F${r.fat || 0} · per serving`)).join('')
     : '<div class="rec-empty">No recipes yet. Add one in Meal → Recipes.</div>';
 }
 function logFood(id) {
@@ -3819,6 +3830,7 @@ function openQtyModal(item) {
   document.getElementById('qty-input').value = item.defaultQty || 1;
   document.getElementById('qty-serving-hint').textContent = item.serving ? ('· ' + item.serving + ' each') : '';
   document.getElementById('qty-slot').value = logTargetSlot || defaultSlot();
+  const btn = document.getElementById('qty-confirm-btn'); if (btn) btn.textContent = item.editId ? 'Save changes' : 'Add to diary';
   renderQtyPreview();
   openModalById('qty-modal');
 }
@@ -3833,7 +3845,7 @@ function renderQtyPreview() {
   const q = Math.max(0, parseFloat(document.getElementById('qty-input').value) || 0);
   const p = pendingLog; if (!p) return;
   document.getElementById('qty-macro-preview').innerHTML =
-    `<span class="qp-kcal">${Math.round(p.kcal * q)} kcal</span>` +
+    `<span class="qp-kcal">${Math.round(p.kcal * q)} cal</span>` +
     `<span>Protein <b>${Math.round(p.protein * q)}g</b></span>` +
     `<span>Carbs <b>${Math.round(p.carbs * q)}g</b></span>` +
     `<span>Fat <b>${Math.round(p.fat * q)}g</b></span>`;
@@ -3842,8 +3854,17 @@ function confirmLog() {
   const p = pendingLog; if (!p) return;
   const qty = Math.max(0.25, parseFloat(document.getElementById('qty-input').value) || 1);
   const slot = document.getElementById('qty-slot').value;
-  const key = dkey(diaryDate);
   ensureDataModel();
+  if (p.editId) {
+    const d = state.diary[p.editKey];
+    const e = d && d.entries.find(x => x.id === p.editId);
+    if (e) { e.qty = qty; e.slot = slot; saveState(); }
+    closeModal('qty-modal');
+    toast('Entry updated');
+    renderDiary();
+    return;
+  }
+  const key = dkey(diaryDate);
   if (!state.diary[key]) state.diary[key] = { entries: [] };
   state.diary[key].entries.push({
     id: 'e' + Date.now() + Math.round(Math.random() * 9999),
@@ -3983,7 +4004,7 @@ function showScanResult(p) {
   el.innerHTML = `<div class="scan-product">
       ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
-      <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} kcal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
+      <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
     <button class="btn-primary" onclick="logScanned('${p.fid}')">Add to diary</button>
     <button class="btn-secondary" onclick="openScanner()">Scan another</button>`;
@@ -4169,7 +4190,7 @@ function renderGoogleHealthSettings() {
 // counted once, never summed.
 function kcalPerStep() {
   const kg = (state.settings.weight || 160) * 0.453592;
-  return kg * 0.0005; // ~0.04 kcal/step at ~80kg — a standard walking estimate
+  return kg * 0.0005; // ~0.04 cal/step at ~80kg — a standard walking estimate
 }
 function stepsBySource(key) {
   ensureDataModel();
@@ -4966,7 +4987,7 @@ function openRecommend() {
   const remP = t.protein - tot.protein, remC = t.carbs - tot.carbs, remF = t.fat - tot.fat;
   const sub = document.getElementById('recommend-sub');
   const list = document.getElementById('recommend-list');
-  sub.innerHTML = `About <b>${Math.max(0, Math.round(remKcal))} kcal</b> left today — still need roughly <b>${Math.max(0, remP)}g</b> protein, <b>${Math.max(0, remC)}g</b> carbs, <b>${Math.max(0, remF)}g</b> fat.`;
+  sub.innerHTML = `About <b>${Math.max(0, Math.round(remKcal))} cal</b> left today — still need roughly <b>${Math.max(0, remP)}g</b> protein, <b>${Math.max(0, remC)}g</b> carbs, <b>${Math.max(0, remF)}g</b> fat.`;
 
   if (remKcal <= 40 && remP <= 3 && remC <= 5 && remF <= 2) {
     list.innerHTML = '<div class="rec-empty">🎉 You’ve essentially hit your targets for the day. Nice work!</div>';
@@ -4987,7 +5008,7 @@ function openRecommend() {
       <span class="ri-emoji">${f.emoji || '🍽️'}</span>
       <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
         <div class="ri-why">${recWhy(f, wP, wC, wF)}</div>
-        <div class="ri-macros">${f.serving} · ${f.kcal} kcal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
+        <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
       <span class="ri-add">＋</span></div>`).join('')
     || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>')
     + micronutrientRecsHtml();
@@ -5060,7 +5081,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v22 · 2026-07-05';
+const APP_VERSION = 'v23 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

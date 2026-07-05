@@ -1506,6 +1506,14 @@ body {
     </div>
 
     <div class="settings-section">
+      <div class="settings-label">Restaurant menus (Nutritionix)</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Add restaurant &amp; chain-menu items to search (e.g. a specific "Dunkin' Bacon Egg &amp; Cheese"). Get a free key at <b>developer.nutritionix.com</b> → sign up → your <b>App ID</b> and <b>App Key</b>, then paste them here. Results appear in the same search bar as USDA and Open Food Facts.</p>
+      <div class="settings-row"><label>App ID</label><input type="text" id="nx-app-id" placeholder="xxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
+      <div class="settings-row"><label>App Key</label><input type="text" id="nx-app-key" placeholder="xxxxxxxxxxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
+      <div id="nx-status" style="font-size:11px;color:var(--text3);margin-top:6px;"></div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-label">Energy check-ins</div>
       <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Rate your energy (Low / Medium / High) through the day so PlateIQ can learn your patterns. It asks more often at first, then eases off as it gathers data — currently about <b id="energy-cadence">—</b>×/day.</p>
       <button class="btn-primary" id="energy-enable-btn" style="margin-bottom:10px;" onclick="toggleEnergy()">Turn on check-ins</button>
@@ -2377,9 +2385,10 @@ function addLocalToWillEat(id) {
   searchFoodsToAdd();
   toast('Added to Will-Eat');
 }
-function addOffToWillEat(id) {
-  const f = offCache[id]; if (!f) return;
+async function addOffToWillEat(id) {
+  let f = offCache[id]; if (!f) return;
   ensureDataModel();
+  f = await ensureNutritionixDetail(f);
   if (!state.customFoods.find(x => x.id === f.id)) state.customFoods.push(f);
   state.ratings[f.id] = 'yes'; markFoodUsed(f.id);
   saveState();
@@ -2729,9 +2738,10 @@ function addFoodToMeal(foodId) {
   closeModal('food-picker-modal');
   renderBuilder();
 }
-function addOffToMeal(id) {
-  const f = offCache[id]; if (!f) return;
+async function addOffToMeal(id) {
+  let f = offCache[id]; if (!f) return;
   ensureDataModel();
+  f = await ensureNutritionixDetail(f);
   if (!state.customFoods.find(x => x.id === f.id)) state.customFoods.push(f);
   state.ratings[f.id] = 'yes'; markFoodUsed(f.id); // also keep it in your Will-Eat list
   saveState();
@@ -3991,6 +4001,7 @@ function ensureDataModel() {
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
+  if (!state.nutritionix) state.nutritionix = { appId: '', appKey: '' }; // restaurant / branded menus (optional)
   if (!state.energy) state.energy = { enabled: true, notify: false, wakeStart: 8, wakeEnd: 22, logs: [], lastPromptT: 0 };
   if (state.energy.pushOn === undefined) state.energy.pushOn = false;
   if (state.energy.vapidPublic === undefined) state.energy.vapidPublic = '';
@@ -4226,13 +4237,66 @@ async function usdaSearch(q) {
   const j = await r.json();
   return (j.foods || []).map(usdaToFood).filter(f => f.kcal > 0 && f.name);
 }
+// ── Nutritionix (restaurant / branded-menu database) ─────────────────────────
+function nutritionixCfg() { ensureDataModel(); return state.nutritionix || {}; }
+function saveNutritionix() {
+  ensureDataModel();
+  state.nutritionix = {
+    appId: (document.getElementById('nx-app-id').value || '').trim(),
+    appKey: (document.getElementById('nx-app-key').value || '').trim()
+  };
+  saveState(); renderNutritionixSettings();
+  toast(nutritionixOn() ? 'Restaurant search on' : 'Nutritionix keys cleared');
+}
+function renderNutritionixSettings() {
+  ensureDataModel();
+  const c = state.nutritionix || {};
+  const id = document.getElementById('nx-app-id'); if (id) id.value = c.appId || '';
+  const key = document.getElementById('nx-app-key'); if (key) key.value = c.appKey || '';
+  const st = document.getElementById('nx-status'); if (st) st.textContent = nutritionixOn() ? '✅ Restaurant menus are included in search.' : 'Not set — restaurant items won’t appear yet.';
+}
+function nutritionixOn() { const c = nutritionixCfg(); return !!(c.appId && c.appKey); }
+function nutritionixHeaders() { const c = nutritionixCfg(); return { 'x-app-id': c.appId, 'x-app-key': c.appKey }; }
+async function nutritionixSearch(q) {
+  if (!nutritionixOn()) return [];
+  try {
+    const r = await fetch('https://trackapi.nutritionix.com/v2/search/instant?query=' + encodeURIComponent(q) + '&branded=true&common=false', { headers: nutritionixHeaders() });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return (j.branded || []).slice(0, 12).map(b => ({
+      id: 'nx' + b.nix_item_id, name: b.food_name, brand: b.brand_name || '', emoji: '🍔', category: 'Restaurant',
+      serving: (b.serving_qty && b.serving_unit) ? (b.serving_qty + ' ' + b.serving_unit) : '1 serving',
+      kcal: Math.round(b.nf_calories || 0), protein: null, carbs: null, fat: null,
+      image: (b.photo && b.photo.thumb) || '', nixItemId: b.nix_item_id, source: 'nutritionix', needsDetail: true
+    }));
+  } catch (e) { return []; }
+}
+// Branded instant results only carry calories; fetch full macros on first use.
+async function ensureNutritionixDetail(f) {
+  if (!f || !f.needsDetail || !f.nixItemId || !nutritionixOn()) return f;
+  try {
+    const r = await fetch('https://trackapi.nutritionix.com/v2/search/item?nix_item_id=' + encodeURIComponent(f.nixItemId), { headers: nutritionixHeaders() });
+    if (r.ok) { const it = ((await r.json()).foods || [])[0];
+      if (it) {
+        f.kcal = Math.round(it.nf_calories || f.kcal || 0);
+        f.protein = Math.round(it.nf_protein || 0);
+        f.carbs = Math.round(it.nf_total_carbohydrate || 0);
+        f.fat = Math.round(it.nf_total_fat || 0);
+        if (it.serving_qty && it.serving_unit) f.serving = it.serving_qty + ' ' + it.serving_unit;
+        f.needsDetail = false; offCache[f.id] = f;
+      }
+    }
+  } catch (e) {}
+  return f;
+}
 function searchDatabases(q, seq) { return searchDatabasesInto('db-results', q, seq, 'logOff'); }
-// Shared USDA + Open Food Facts search: fetches both, merges, and renders each
-// row with the given action (logOff for the diary, addOffToMeal for the picker).
+// Shared USDA + Nutritionix + Open Food Facts search: fetches all, merges, and
+// renders each row with the given action (logOff for the diary, addOffToMeal…).
 async function searchDatabasesInto(containerId, q, seq, action) {
   const el = document.getElementById(containerId); if (!el) return;
   const tasks = [];
-  if (usdaKey()) tasks.push(usdaSearch(q).catch(() => [])); // USDA first (whole foods), key built in
+  if (usdaKey()) tasks.push(usdaSearch(q).catch(() => [])); // USDA (whole + prepared foods), key built in
+  if (nutritionixOn()) tasks.push(nutritionixSearch(q).catch(() => [])); // restaurant / chain menus
   tasks.push(offSearch(q).catch(() => []));
   let results;
   try { results = await Promise.all(tasks); } catch (e) { results = []; }
@@ -4243,16 +4307,18 @@ async function searchDatabasesInto(containerId, q, seq, action) {
     return;
   }
   merged.forEach(f => { offCache[f.id] = f; });
-  el.innerHTML = merged.slice(0, 40).map(f =>
-    pickRow(`${action}('${f.id}')`, foodIcon(f, 20), f.name + (f.brand ? ' · ' + f.brand : ''),
-      `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`)
-  ).join('');
+  el.innerHTML = merged.slice(0, 40).map(f => {
+    const macroStr = f.protein == null ? `${f.serving} · ${f.kcal} cal · tap for full macros`
+      : `${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}`;
+    return pickRow(`${action}('${f.id}')`, foodIcon(f, 20), f.name + (f.brand ? ' · ' + f.brand : ''), macroStr);
+  }).join('');
 }
-function logOff(id) {
-  const f = offCache[id]; if (!f) return;
+async function logOff(id) {
+  let f = offCache[id]; if (!f) return;
   ensureDataModel();
+  f = await ensureNutritionixDetail(f);
   if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), image: f.image || null, defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal || 0, protein: f.protein || 0, carbs: f.carbs || 0, fat: f.fat || 0, micros: foodMicros(f), image: f.image || null, defaultQty: 1 });
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -5643,7 +5709,7 @@ overlayClick = function (e, id) {
   }
 };
 const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); };
+openSettings = function () { _origOpenSettings(); renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); renderNutritionixSettings(); };
 const _origRenderHistory = renderHistory;
 renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyByTime(); renderEnergyInsights(); };
 
@@ -5664,7 +5730,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v36 · 2026-07-05';
+const APP_VERSION = 'v37 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

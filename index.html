@@ -1719,6 +1719,16 @@ body {
   </div>
 </div>
 
+<div class="modal-overlay" id="micros-modal" onclick="overlayClick(event,'micros-modal')">
+  <div class="modal">
+    <div class="modal-title" id="micros-title">Micronutrients</div>
+    <p style="font-size:12px;color:var(--text2);margin:-4px 0 10px;line-height:1.5;">Enter the amount <b>per serving</b>. Leave blank for unknown. Saved to this food, so it’s counted every time you log it.</p>
+    <div id="micros-fields" style="max-height:50vh;overflow-y:auto;"></div>
+    <button class="btn-primary" style="margin-top:12px;" onclick="saveMicros()">Save nutrients</button>
+    <button class="btn-secondary" onclick="closeModal('micros-modal')">Cancel</button>
+  </div>
+</div>
+
 <!-- BARCODE SCANNER MODAL -->
 <div class="modal-overlay" id="scanner-modal" onclick="overlayClick(event,'scanner-modal')">
   <div class="modal" style="max-height:92dvh;overflow-y:auto;">
@@ -1975,6 +1985,16 @@ let state = {
 
 function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods]; }
 function getFood(id) { return allFoods().find(f => f.id === id); }
+// Effective micronutrients for a food: its built-in data (USDA) merged with any
+// values the user typed (overrides win). Persisted, so future logs/scans carry them.
+function foodMicros(f) {
+  if (!f) return null;
+  const ov = (state.microOverrides && state.microOverrides[f.id]) || null;
+  const base = f.micros || null;
+  if (!ov && !base) return null;
+  const merged = { ...(base || {}), ...(ov || {}) };
+  return Object.keys(merged).length ? merged : null;
+}
 function acceptedFoods() { return allFoods().filter(f => state.ratings[f.id] === 'yes'); }
 
 // ════════════════════════════════════════ STORAGE ═════════════════════════════
@@ -2222,16 +2242,59 @@ function renderFoodsList(filter) {
     list.innerHTML = `<div class="empty-state"><span class="es-icon">${filter==='yes'?'🥗':'🚫'}</span><p>No foods here yet.</p></div>`;
     return;
   }
-  list.innerHTML = foods.map(f => `
+  list.innerHTML = foods.map(f => {
+    const hasMicros = !!foodMicros(f);
+    return `
     <div class="food-list-item">
       <span class="fli-emoji">${f.emoji||'🍽️'}</span>
-      <div class="fli-info">
-        <div class="fli-name">${f.name}</div>
+      <div class="fli-info" onclick="openMicrosEditor('${f.id}')" style="cursor:pointer;">
+        <div class="fli-name">${escapeHtml(f.name)} ${hasMicros ? '🧬' : '<span style="color:var(--text3);font-weight:400;font-size:11px;">+ nutrients</span>'}</div>
         <div class="fli-macros">${f.serving||''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
       </div>
       <span class="fli-badge ${state.ratings[f.id]==='yes'?'badge-yes':'badge-no'}">${state.ratings[f.id]==='yes'?'✓ eat':'✕ skip'}</span>
-    </div>
-  `).join('');
+      <span onclick="deleteFoodFromList('${f.id}')" title="Delete" style="cursor:pointer;padding:4px 6px;color:var(--text3);font-size:15px;">🗑</span>
+    </div>`;
+  }).join('');
+}
+function deleteFoodFromList(id) {
+  if (!confirm('Remove this food from your lists? This can’t be undone.')) return;
+  ensureDataModel();
+  delete state.ratings[id];
+  delete state.microOverrides[id];
+  state.customFoods = state.customFoods.filter(f => f.id !== id); // fully removes scanned/custom foods
+  saveState();
+  renderFoodsList(currentListFilter);
+  if (typeof renderSwipeCard === 'function') renderSwipeCard();
+  toast('Removed');
+}
+let microsEditId = null;
+function openMicrosEditor(foodId) {
+  ensureDataModel();
+  const f = getFood(foodId); if (!f) return;
+  microsEditId = foodId;
+  const cur = foodMicros(f) || {};
+  document.getElementById('micros-title').textContent = f.name;
+  document.getElementById('micros-fields').innerHTML = NUTRIENTS.map(nt => `
+    <div class="settings-row" style="padding:6px 0;">
+      <label style="flex:1;">${nt.label} <span style="color:var(--text3);">(${nt.unit})</span></label>
+      <input type="number" inputmode="decimal" min="0" step="any" id="mi-${nt.key}" value="${cur[nt.key] != null ? cur[nt.key] : ''}" placeholder="—" style="width:90px;">
+    </div>`).join('');
+  openModalById('micros-modal');
+}
+function saveMicros() {
+  if (!microsEditId) return;
+  ensureDataModel();
+  const micros = {};
+  NUTRIENTS.forEach(nt => {
+    const v = parseFloat(document.getElementById('mi-' + nt.key).value);
+    if (!isNaN(v) && v > 0) micros[nt.key] = v;
+  });
+  if (Object.keys(micros).length) state.microOverrides[microsEditId] = micros;
+  else delete state.microOverrides[microsEditId];
+  saveState();
+  closeModal('micros-modal');
+  renderFoodsList(currentListFilter);
+  toast('Nutrients saved');
 }
 
 // ════════════════════════════════════════ ADD CUSTOM FOOD ═════════════════════
@@ -3574,6 +3637,7 @@ function ensureDataModel() {
   if (!state.googleHealth) state.googleHealth = { clientId: '', token: null, expiresAt: 0 };
   if (!state.googleDaily) state.googleDaily = {}; // { 'YYYY-MM-DD': { steps } }  Google Health (Fitbit device)
   if (!state.healthDaily) state.healthDaily = {}; // { 'YYYY-MM-DD': { steps } }  Apple Health via cloud
+  if (!state.microOverrides) state.microOverrides = {}; // { foodId: { vitc: 12, iron: 2, ... } }  user-entered micronutrients
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
   if (!state.energy) state.energy = { enabled: true, notify: false, wakeStart: 8, wakeEnd: 22, logs: [], lastPromptT: 0 };
@@ -3801,7 +3865,7 @@ function logOff(id) {
   const f = offCache[id]; if (!f) return;
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: f.micros || null, defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), defaultQty: 1 });
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -3817,7 +3881,7 @@ function renderLogRecipes() {
 }
 function logFood(id) {
   const f = getFood(id); if (!f) return;
-  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: f.micros || null, defaultQty: 1 });
+  openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji || '🍽️', serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: foodMicros(f), defaultQty: 1 });
 }
 function logMeal(i) {
   const m = state.savedMeals[i]; if (!m) return;
@@ -4018,6 +4082,7 @@ function showScanResult(p) {
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
     <button class="btn-primary" onclick="logScanned('${p.fid}')">Add to diary</button>
+    <button class="btn-secondary" onclick="closeScanner();openMicrosEditor('${p.fid}')">＋ Add micronutrients</button>
     <button class="btn-secondary" onclick="openScanner(scanMode)">Scan another</button>`;
 }
 function showScanWillEat(p) {
@@ -4030,6 +4095,7 @@ function showScanWillEat(p) {
     </div>
     <div style="text-align:center;color:var(--accent);font-weight:600;margin:8px 0 6px;">✓ Added to your Will-Eat foods</div>
     <button class="btn-primary" onclick="openScanner('willeat')">Scan another</button>
+    <button class="btn-secondary" onclick="closeScanner();openMicrosEditor('${p.fid}')">＋ Add micronutrients</button>
     <button class="btn-secondary" onclick="closeScannerToFoods()">Done</button>`;
 }
 function closeScannerToFoods() {
@@ -4502,6 +4568,7 @@ function mergeCloudInto(cloud) {
     state.diary[k] = { entries: unionById(le, ce) };
   });
   state.healthDaily = mergeDaily(state.healthDaily, cloud.healthDaily);
+  state.microOverrides = { ...(cloud.microOverrides || {}), ...(state.microOverrides || {}) };
   _origSaveState();
 }
 async function pushCloud() {
@@ -5111,7 +5178,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v24 · 2026-07-05';
+const APP_VERSION = 'v25 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

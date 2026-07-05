@@ -1440,15 +1440,6 @@ body {
     </div>
 
     <div class="settings-section">
-      <div class="settings-label">Food database (USDA)</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">✅ Built-in USDA FoodData Central is active — whole-food nutrition (great for items like “chicken breast”) is searched alongside Open Food Facts, USDA first.</p>
-      <div style="font-size:11px;color:var(--text3);cursor:pointer;" onclick="toggleUsdaAdvanced()">Advanced — use your own API key ▾</div>
-      <div id="usda-config-rows" style="display:none;margin-top:8px;">
-        <div class="settings-row"><label>USDA API key</label><input type="text" id="usda-key" placeholder="(built-in default)" style="width:170px;" onchange="saveUsdaKey()"></div>
-      </div>
-    </div>
-
-    <div class="settings-section">
       <div class="settings-label">Google Health (steps &amp; Fitbit)</div>
       <div id="gh-connected" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -3886,9 +3877,9 @@ async function usdaSearch(q) {
 }
 async function searchDatabases(q, seq) {
   const el = document.getElementById('db-results'); if (!el) return;
-  // USDA first (better for whole foods) when a key is set, then Open Food Facts.
+  // USDA first (better for whole foods) — the key is built in, then Open Food Facts.
   const tasks = [];
-  if (state.usda && state.usda.apiKey) tasks.push(usdaSearch(q).catch(() => []));
+  if (usdaKey()) tasks.push(usdaSearch(q).catch(() => []));
   tasks.push(offSearch(q).catch(() => []));
   let results;
   try { results = await Promise.all(tasks); } catch (e) { results = []; }
@@ -3909,20 +3900,6 @@ function logOff(id) {
   ensureDataModel();
   if (!state.customFoods.find(x => x.id === f.id)) { state.customFoods.push(f); saveState(); }
   openQtyModal({ kind: 'food', refId: f.id, name: f.name, emoji: f.emoji, serving: f.serving, kcal: f.kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, micros: f.micros || null, defaultQty: 1 });
-}
-function saveUsdaKey() {
-  ensureDataModel();
-  state.usda.apiKey = (document.getElementById('usda-key').value || '').trim();
-  saveState();
-  toast(state.usda.apiKey ? 'USDA connected' : 'USDA key cleared');
-}
-function renderUsdaSettings() {
-  ensureDataModel();
-  const el = document.getElementById('usda-key'); if (el) el.value = state.usda.apiKey || '';
-}
-function toggleUsdaAdvanced() {
-  const el = document.getElementById('usda-config-rows');
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 function renderLogMeals() {
   const meals = state.savedMeals || [];
@@ -4994,7 +4971,7 @@ function renderNutrients() {
   const list = document.getElementById('nutrient-list'); if (!list) return;
   const status = nutrientStatus(new Date());
   if (!hasMicroData(status)) {
-    list.innerHTML = '<div class="rec-empty" style="padding:18px 8px;">No micronutrient data yet.<br>Log foods via <b>USDA search</b> (Settings → Food database) to track vitamins & minerals here — each is measured over its natural window.</div>';
+    list.innerHTML = '<div class="rec-empty" style="padding:18px 8px;">No micronutrient data yet.<br>Log whole foods via <b>food search</b> (USDA data is built in) to track vitamins & minerals here — each is measured over its natural window.</div>';
     return;
   }
   const byTier = { daily: [], few: [], week: [] };
@@ -5097,7 +5074,7 @@ overlayClick = function (e, id) {
   }
 };
 const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderSyncSettings(); renderUsdaSettings(); renderEnergySettings(); renderGoogleHealthSettings(); };
+openSettings = function () { _origOpenSettings(); renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); };
 const _origRenderHistory = renderHistory;
 renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyInsights(); };
 
@@ -5118,7 +5095,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v17 · 2026-07-05';
+const APP_VERSION = 'v18 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

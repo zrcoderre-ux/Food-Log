@@ -1103,6 +1103,8 @@ body {
       </div>
     </div>
 
+    <div id="inv-today-alert" onclick="switchTab('foods',document.querySelectorAll('.tab-btn')[1]);showView('inventory');" style="display:none;cursor:pointer;margin:0 16px 12px;background:#FFF4E5;border:1px solid #F5C77E;color:#8A5A00;border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;line-height:1.5;"></div>
+
     <!-- Quick actions -->
     <div class="diary-actions">
       <button class="diary-action" onclick="openScanner()"><span class="da-ic">📷</span>Scan barcode</button>
@@ -1173,6 +1175,19 @@ body {
     <div style="padding:16px;display:flex;flex-direction:column;gap:8px;">
       <button class="btn-secondary" onclick="openScanner('willeat')">📷 Scan a barcode to add a food</button>
       <button class="btn-secondary" onclick="openAddFood()">＋ Add custom food</button>
+      <button class="btn-secondary" onclick="showView('inventory')">🧺 Inventory &amp; best-by</button>
+    </div>
+  </div>
+
+  <div id="inventory-view" style="display:none;">
+    <div style="padding:14px 16px 10px; display:flex; justify-content:space-between; align-items:center;">
+      <div class="section-head" style="margin:0;">🧺 Inventory</div>
+      <button style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent);font-family:'DM Sans',sans-serif;font-weight:500;" onclick="showView('list')">← Foods</button>
+    </div>
+    <div id="inv-alerts" style="padding:0 16px;"></div>
+    <div class="foods-list" id="inventory-list"></div>
+    <div style="padding:16px;">
+      <button class="btn-secondary" onclick="openAddInventory()">＋ Add item as you buy it</button>
     </div>
   </div>
 </div>
@@ -1558,6 +1573,22 @@ body {
     </div>
     <button class="btn-primary" onclick="saveCustomFood()">Add food</button>
     <button class="btn-secondary" onclick="closeModal('add-food-modal')">Cancel</button>
+  </div>
+</div>
+
+<!-- ADD / EDIT INVENTORY MODAL -->
+<div class="modal-overlay" id="add-inv-modal" onclick="overlayClick(event,'add-inv-modal')">
+  <div class="modal">
+    <div class="modal-title" id="inv-modal-title">Add to inventory</div>
+    <div class="form-group"><label>Item</label><input type="text" id="inv-name" placeholder="e.g. Greek yogurt"></div>
+    <div class="form-row">
+      <div class="form-group" style="margin:0;"><label>Quantity</label><input type="number" id="inv-qty" value="1" min="0" step="any"></div>
+      <div class="form-group" style="margin:0;"><label>Unit</label><input type="text" id="inv-unit" placeholder="items / oz / g"></div>
+    </div>
+    <div class="form-group"><label>Best-by date</label><input type="date" id="inv-bestby" style="width:100%;"></div>
+    <div class="form-group"><label>Alert when quantity ≤</label><input type="number" id="inv-low" value="1" min="0" step="any"></div>
+    <button class="btn-primary" onclick="saveInventoryItem()">Save</button>
+    <button class="btn-secondary" onclick="closeModal('add-inv-modal')">Cancel</button>
   </div>
 </div>
 
@@ -2278,10 +2309,10 @@ function setupDrag() {
 }
 
 function showView(v) {
-  document.getElementById('swipe-view').style.display = v==='swipe' ? 'block' : 'none';
-  document.getElementById('list-view').style.display = v==='list' ? 'block' : 'none';
+  ['swipe', 'list', 'inventory'].forEach(x => { const el = document.getElementById(x + '-view'); if (el) el.style.display = x === v ? 'block' : 'none'; });
   const sb = document.getElementById('foods-add-search'); if (sb) sb.value = '';
-  if (v==='list') renderFoodsList('yes');
+  if (v === 'list') renderFoodsList('yes');
+  if (v === 'inventory') renderInventory();
 }
 
 let currentListFilter = 'yes';
@@ -2354,6 +2385,121 @@ function addOffToWillEat(id) {
   saveState();
   searchFoodsToAdd();
   toast('Added to Will-Eat');
+}
+
+// ── Inventory / best-by tracking ─────────────────────────────────────────────
+let invEditId = null;
+function invDaysLeft(it) {
+  if (!it.bestBy) return null;
+  const today = new Date(dkey(new Date()) + 'T00:00:00');
+  const bb = new Date(it.bestBy + 'T00:00:00');
+  return Math.round((bb - today) / 864e5);
+}
+function invStatuses(it) {
+  const out = [];
+  const dl = invDaysLeft(it);
+  if (dl != null && dl < 0) out.push({ t: 'expired', label: 'Expired', color: 'var(--warn)' });
+  else if (dl != null && dl <= 3) out.push({ t: 'expiring', label: dl === 0 ? 'Best by today' : ('Best by in ' + dl + 'd'), color: 'var(--fat)' });
+  if ((+it.qty || 0) <= (it.low != null ? +it.low : 1)) out.push({ t: 'low', label: 'Running low', color: 'var(--warn)' });
+  return out;
+}
+function invUrgency(it) {
+  const s = invStatuses(it).map(x => x.t);
+  if (s.includes('expired')) return 3;
+  if (s.includes('low')) return 2;
+  if (s.includes('expiring')) return 2;
+  return 0;
+}
+function inventoryAlerts() { ensureDataModel(); return state.inventory.filter(it => invStatuses(it).length); }
+function openAddInventory(editId) {
+  ensureDataModel();
+  invEditId = editId || null;
+  const it = editId ? state.inventory.find(x => x.id === editId) : null;
+  document.getElementById('inv-modal-title').textContent = it ? 'Edit item' : 'Add to inventory';
+  document.getElementById('inv-name').value = it ? it.name : '';
+  document.getElementById('inv-qty').value = it ? it.qty : 1;
+  document.getElementById('inv-unit').value = it ? (it.unit || '') : '';
+  document.getElementById('inv-bestby').value = it ? (it.bestBy || '') : '';
+  document.getElementById('inv-low').value = it && it.low != null ? it.low : 1;
+  openModalById('add-inv-modal');
+}
+function saveInventoryItem() {
+  ensureDataModel();
+  const name = (document.getElementById('inv-name').value || '').trim();
+  if (!name) { toast('Enter an item name'); return; }
+  const item = {
+    id: invEditId || ('inv_' + Date.now() + Math.round(Math.random() * 999)),
+    name,
+    qty: Math.max(0, parseFloat(document.getElementById('inv-qty').value) || 0),
+    unit: (document.getElementById('inv-unit').value || '').trim(),
+    bestBy: document.getElementById('inv-bestby').value || '',
+    low: Math.max(0, parseFloat(document.getElementById('inv-low').value) || 0)
+  };
+  if (invEditId) {
+    const i = state.inventory.findIndex(x => x.id === invEditId);
+    if (i >= 0) state.inventory[i] = item;
+  } else {
+    state.inventory.push(item);
+  }
+  saveState();
+  closeModal('add-inv-modal');
+  renderInventory(); renderDiary();
+  toast('Saved to inventory');
+}
+function invAdjust(id, delta) {
+  ensureDataModel();
+  const it = state.inventory.find(x => x.id === id); if (!it) return;
+  it.qty = Math.max(0, Math.round(((+it.qty || 0) + delta) * 100) / 100);
+  saveState();
+  renderInventory(); renderDiary();
+}
+function deleteInventory(id) {
+  if (!confirm('Remove this item from your inventory?')) return;
+  ensureDataModel();
+  state.inventory = state.inventory.filter(x => x.id !== id);
+  saveState();
+  renderInventory(); renderDiary();
+}
+function invRow(it) {
+  const st = invStatuses(it);
+  const badges = st.map(s => `<span style="font-size:10px;font-weight:600;color:${s.color};border:1px solid ${s.color};border-radius:999px;padding:1px 7px;white-space:nowrap;">${s.label}</span>`).join(' ');
+  const dl = invDaysLeft(it);
+  const bbText = it.bestBy ? ('best by ' + new Date(it.bestBy + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : 'no date';
+  return `<div class="food-list-item" style="${st.length ? 'border-left:3px solid ' + (st[0].color) + ';' : ''}">
+    <div class="fli-info" onclick="openAddInventory('${it.id}')" style="cursor:pointer;">
+      <div class="fli-name">${escapeHtml(it.name)} ${badges}</div>
+      <div class="fli-macros">${fmtQty(it.qty)}${it.unit ? ' ' + escapeHtml(it.unit) : ''} · ${bbText}${dl != null && dl >= 0 && dl <= 14 ? ' · ' + dl + 'd left' : ''}</div>
+    </div>
+    <span onclick="invAdjust('${it.id}',-1)" title="Use one" style="cursor:pointer;padding:4px 9px;font-size:17px;color:var(--text2);">−</span>
+    <span onclick="invAdjust('${it.id}',1)" title="Add one" style="cursor:pointer;padding:4px 9px;font-size:16px;color:var(--accent);">＋</span>
+    <span onclick="deleteInventory('${it.id}')" title="Delete" style="cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);">🗑</span>
+  </div>`;
+}
+function renderInvAlerts() {
+  const el = document.getElementById('inv-alerts'); if (!el) return;
+  const alerts = inventoryAlerts();
+  if (!alerts.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div style="background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--accent-text);margin-bottom:10px;line-height:1.5;">⚠️ <b>${alerts.length}</b> item${alerts.length > 1 ? 's need' : ' needs'} attention — running low or past best-by. They're pinned to the top.</div>`;
+}
+function renderInventory() {
+  ensureDataModel();
+  const el = document.getElementById('inventory-list'); if (!el) return;
+  renderInvAlerts();
+  const items = state.inventory;
+  if (!items.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:30px 16px;"><span class="es-icon">🧺</span><p>Nothing here yet. Add items as you buy them and set a best-by date.</p></div>';
+    return;
+  }
+  const sorted = items.slice().sort((a, b) => (invUrgency(b) - invUrgency(a)) || ((a.bestBy || '9999-99-99').localeCompare(b.bestBy || '9999-99-99')));
+  el.innerHTML = sorted.map(invRow).join('');
+}
+function renderInventoryTodayAlert() {
+  const el = document.getElementById('inv-today-alert'); if (!el) return;
+  const alerts = inventoryAlerts();
+  if (!alerts.length) { el.style.display = 'none'; return; }
+  const names = alerts.slice(0, 3).map(it => escapeHtml(it.name)).join(', ');
+  el.style.display = 'block';
+  el.innerHTML = `⚠️ <b>${alerts.length}</b> inventory item${alerts.length > 1 ? 's' : ''} low or expiring: ${names}${alerts.length > 3 ? '…' : ''} <span style="text-decoration:underline;">View</span>`;
 }
 function deleteFoodFromList(id) {
   if (!confirm('Remove this food from your lists? This can’t be undone.')) return;
@@ -3840,6 +3986,7 @@ function ensureDataModel() {
   if (!state.microOverrides) state.microOverrides = {}; // { foodId: { vitc: 12, iron: 2, ... } }  user-entered micronutrients
   if (!state.foodOverrides) state.foodOverrides = {}; // { foodId: { kcal, protein, carbs, fat, serving, name } }  corrected values
   if (!state.foodUsage) state.foodUsage = {}; // { foodId: lastUsedTimestamp }  for search ranking
+  if (!state.inventory) state.inventory = []; // [ { id, name, qty, unit, bestBy, low } ]  pantry / best-by tracking
   if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
@@ -3931,6 +4078,7 @@ function renderDiary() {
 
   renderGoogleStrip(key);
   renderHydration();
+  renderInventoryTodayAlert();
   renderSyncBadge();
   renderEnergyCard();
   renderDiaryMeals(key);
@@ -4819,6 +4967,7 @@ function mergeCloudInto(cloud) {
   state.healthDaily = mergeDaily(state.healthDaily, cloud.healthDaily);
   state.microOverrides = { ...(cloud.microOverrides || {}), ...(state.microOverrides || {}) };
   state.hydration = mergeDaily(state.hydration, cloud.hydration);
+  state.inventory = unionById(state.inventory, cloud.inventory);
   state.foodOverrides = { ...(cloud.foodOverrides || {}), ...(state.foodOverrides || {}) };
   { const cu = cloud.foodUsage || {}, su = state.foodUsage || {}, out = { ...cu }; Object.keys(su).forEach(k => { out[k] = Math.max(out[k] || 0, su[k]); }); state.foodUsage = out; }
   _origSaveState();
@@ -5496,7 +5645,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v34 · 2026-07-05';
+const APP_VERSION = 'v35 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

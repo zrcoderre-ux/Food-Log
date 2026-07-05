@@ -5091,25 +5091,52 @@ function openRecommend() {
     openModalById('recommend-modal'); return;
   }
   const needP = Math.max(0, remP), needC = Math.max(0, remC), needF = Math.max(0, remF);
-  const totalNeed = needP + needC + needF || 1;
-  const wP = needP / totalNeed, wC = needC / totalNeed, wF = needF / totalNeed;
+  const ctx = {
+    remKcal, needP, needC, needF,
+    gP: t.protein || 1, gC: t.carbs || 1, gF: t.fat || 1,
+    status: nutrientStatus(new Date())
+  };
   let pool = acceptedFoods();
   if (pool.length < 5) pool = allFoods();
-  const scored = pool.filter(f => f.kcal > 0).map(f => {
-    let score = f.protein * wP + f.carbs * wC + f.fat * wF;
-    if (remKcal > 0 && f.kcal > remKcal) score /= (1 + (f.kcal - remKcal) / Math.max(remKcal, 50));
-    return { f, score };
-  }).sort((a, b) => b.score - a.score).slice(0, 8);
+  const scored = pool.filter(f => f.kcal > 0)
+    .map(f => ({ f, score: recScore(f, ctx) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score).slice(0, 8);
 
   list.innerHTML = (scored.map(({ f }) => `<div class="rec-item" onclick="logFood('${f.id}')">
       <span class="ri-emoji">${f.emoji || '🍽️'}</span>
       <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
-        <div class="ri-why">${recWhy(f, wP, wC, wF)}</div>
+        <div class="ri-why">${recWhy(f, ctx)}</div>
         <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
       <span class="ri-add">＋</span></div>`).join('')
     || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>')
     + micronutrientRecsHtml();
   openModalById('recommend-modal');
+}
+// Rank foods by how well they fill what you STILL need, per calorie — so a
+// protein gap steers you to lean protein instead of just "anything that fits".
+// Contributions are capped at the remaining need (overshoot earns nothing),
+// urgency-weighted by how short each macro is, and divided by calories so
+// nutrient-dense picks win. Deficient tracked micronutrients add a bonus.
+function recScore(f, ctx) {
+  const uP = ctx.needP / ctx.gP, uC = ctx.needC / ctx.gC, uF = ctx.needF / ctx.gF; // urgency 0..1+
+  const macroVal =
+    uP * Math.min(f.protein, ctx.needP) / ctx.gP +
+    uC * Math.min(f.carbs, ctx.needC) / ctx.gC +
+    uF * Math.min(f.fat, ctx.needF) / ctx.gF;
+  let microVal = 0;
+  const fm = foodMicros(f);
+  if (fm) ctx.status.forEach(s => {
+    if (s.pct < 1 && fm[s.nt.key]) {
+      const gap = Math.max(0, s.need - s.have);
+      microVal += (1 - s.pct) * Math.min(fm[s.nt.key], gap) / (s.need || 1);
+    }
+  });
+  const value = macroVal + 0.5 * microVal;
+  if (value <= 0) return 0;
+  let score = value / Math.max(f.kcal, 20) * 1000; // value per calorie
+  if (ctx.remKcal > 0 && f.kcal > ctx.remKcal) score *= ctx.remKcal / f.kcal; // demote calorie-budget blowers
+  return score;
 }
 function micronutrientRecsHtml() {
   const status = nutrientStatus(new Date());
@@ -5131,9 +5158,29 @@ function suggestSearch(name) {
   const inp = document.getElementById('log-search-input');
   if (inp) { inp.value = name; renderLogSearch(); }
 }
-function recWhy(f, wP, wC, wF) {
-  const c = [['protein', f.protein * wP, `${f.protein}g protein`], ['carbs', f.carbs * wC, `${f.carbs}g carbs`], ['fat', f.fat * wF, `${f.fat}g fat`]].sort((a, b) => b[1] - a[1]);
-  return 'Helps fill your ' + c[0][2];
+function recWhy(f, ctx) {
+  const uP = ctx.needP / ctx.gP, uC = ctx.needC / ctx.gC, uF = ctx.needF / ctx.gF;
+  const c = [
+    ['protein', uP * Math.min(f.protein, ctx.needP) / ctx.gP, `${f.protein}g protein`],
+    ['carbs', uC * Math.min(f.carbs, ctx.needC) / ctx.gC, `${f.carbs}g carbs`],
+    ['fat', uF * Math.min(f.fat, ctx.needF) / ctx.gF, `${f.fat}g fat`]
+  ].sort((a, b) => b[1] - a[1]);
+  // If it's notably lean for what it delivers, say so.
+  const perCal = f.kcal > 0 ? (f.protein / f.kcal) : 0;
+  // Micronutrient it meaningfully helps with (biggest current gap it covers).
+  const fm = foodMicros(f);
+  let microName = '';
+  if (fm) {
+    let best = 0;
+    ctx.status.forEach(s => {
+      if (s.pct < 0.85 && fm[s.nt.key]) { const w = (1 - s.pct) * Math.min(fm[s.nt.key], Math.max(0, s.need - s.have)); if (w > best) { best = w; microName = s.nt.label; } }
+    });
+  }
+  const parts = [];
+  if (c[0][1] > 0) parts.push('Fills your ' + c[0][2]);
+  if (c[0][0] === 'protein' && perCal >= 0.12) parts.push('lean protein');
+  if (microName) parts.push('good source of ' + microName);
+  return parts.length ? parts.join(' · ') : ('Balanced pick · ' + f.kcal + ' cal');
 }
 
 // ── Override navigation / overlays to wire in the new screens ────────────────
@@ -5178,7 +5225,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v25 · 2026-07-05';
+const APP_VERSION = 'v26 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

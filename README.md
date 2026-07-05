@@ -103,8 +103,6 @@ your own project; the app only ever holds your project's *public* keys.
      the app's **Paste link & sign in** box.
    - **Or** add `{{ .Token }}` to the *Magic Link* email template (Authentication
      → Email Templates) so the email shows a 6-digit **code** to type in.
-   - **Or** use **phone/SMS**: set up an SMS provider (Authentication → Providers
-     → Phone, e.g. Twilio), then "Text me a code" in the app.
 
    Repeat on any other device to share the same data.
 

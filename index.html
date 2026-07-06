@@ -402,6 +402,14 @@ body {
 #log-food-modal #log-search-pane > input, #log-food-modal #log-search-pane > button { flex-shrink: 0; }
 #log-food-modal .food-pick-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #log-food-modal .modal > button { flex-shrink: 0; }
+#log-recent { margin: 4px 0 8px; }
+.log-recent-head { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); margin-bottom: 6px; }
+.log-recent-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px; background: var(--surface2); border: 1px solid var(--accent); border-radius: var(--radius-sm); cursor: pointer; }
+.log-recent-item:active { background: var(--accent-light); }
+.log-recent-item .lri-main { flex: 1; min-width: 0; }
+.log-recent-item .lri-names { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-recent-item .lri-macros { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.log-recent-item .lri-add { font-size: 18px; color: var(--accent); }
 .form-group { margin-bottom: 13px; }
 .form-group label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 5px; font-weight: 500; }
 .form-group input {
@@ -1783,6 +1791,7 @@ body {
 <div class="modal-overlay" id="log-food-modal" onclick="overlayClick(event,'log-food-modal')">
   <div class="modal" style="height:82dvh;display:flex;flex-direction:column;">
     <div class="modal-title" id="log-food-title">Add to Breakfast</div>
+    <div id="log-recent" style="flex-shrink:0;"></div>
     <div class="log-source-tabs">
       <div class="log-source-tab active" onclick="logSourceTab('search',this)">Foods</div>
       <div class="log-source-tab" onclick="logSourceTab('meals',this)">Meals</div>
@@ -4468,8 +4477,69 @@ function openLogModal(slot) {
   logTargetSlot = slot || defaultSlot();
   document.getElementById('log-food-title').textContent = 'Add to ' + logTargetSlot;
   document.getElementById('log-search-input').value = '';
+  renderRecentSlotMeals(logTargetSlot);
   logSourceTab('search');
   openModalById('log-food-modal');
+}
+// The most recent DISTINCT meals previously logged in this slot, so you can
+// re-log a frequent breakfast/lunch/dinner in one tap instead of re-searching.
+let _recentSlotMeals = [];
+function recentSlotMeals(slot, limit) {
+  const out = [], seen = new Set();
+  const targetKey = dkey(diaryDate);
+  const days = Object.keys(state.diary || {}).filter(k => k !== targetKey).sort().reverse();
+  for (const day of days) {
+    const entries = ((state.diary[day] || {}).entries || []).filter(e => e.slot === slot);
+    if (!entries.length) continue;
+    const sig = entries.map(e => (e.refId || e.name) + '@' + e.qty).sort().join('|');
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    const kcal = Math.round(entries.reduce((s, e) => s + (e.kcal || 0) * (e.qty || 1), 0));
+    const names = entries.map(e => e.name);
+    let label = names.slice(0, 3).join(', '); if (names.length > 3) label += ' +' + (names.length - 3);
+    out.push({ dateKey: day, entries, label, kcal });
+    if (out.length >= (limit || 2)) break;
+  }
+  return out;
+}
+function relDay(dateKey) {
+  const today = dkey(new Date());
+  if (dateKey === today) return 'today';
+  const diff = Math.round((new Date(today + 'T00:00:00') - new Date(dateKey + 'T00:00:00')) / 86400000);
+  if (diff === 1) return 'yesterday';
+  if (diff > 1 && diff < 7) return diff + ' days ago';
+  return new Date(dateKey + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function renderRecentSlotMeals(slot) {
+  const el = document.getElementById('log-recent'); if (!el) return;
+  _recentSlotMeals = recentSlotMeals(slot, 2);
+  if (!_recentSlotMeals.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<div class="log-recent-head">Recent ${escapeHtml(slot.toLowerCase())} — tap to log again</div>` +
+    _recentSlotMeals.map((m, i) => `<div class="log-recent-item" onclick="relogSlotMeal(${i})">
+      <div class="lri-main"><div class="lri-names">${escapeHtml(m.label)}</div>
+        <div class="lri-macros">${m.kcal} cal · ${relDay(m.dateKey)}</div></div>
+      <span class="lri-add">↻</span></div>`).join('');
+}
+function relogSlotMeal(i) {
+  const m = _recentSlotMeals[i]; if (!m) return;
+  ensureDataModel();
+  const key = dkey(diaryDate);
+  if (!state.diary[key]) state.diary[key] = { entries: [] };
+  m.entries.forEach((e, idx) => {
+    state.diary[key].entries.push({
+      id: 'e' + Date.now() + '_' + idx + Math.round(Math.random() * 9999),
+      kind: e.kind, refId: e.refId || null, name: e.name, emoji: e.emoji || '🍽️', image: e.image || null,
+      slot: logTargetSlot, qty: e.qty, serving: e.serving || '',
+      kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat, micros: e.micros || null
+    });
+    if (e.kind === 'food' && e.refId) markFoodUsed(e.refId);
+  });
+  saveState();
+  syncSlotMeal(key, logTargetSlot);
+  closeModal('log-food-modal');
+  toast('Logged to ' + logTargetSlot);
+  renderDiary();
 }
 function logSourceTab(which, el) {
   document.querySelectorAll('.log-source-tab').forEach(t => t.classList.remove('active'));
@@ -6233,7 +6303,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v64 · 2026-07-05';
+const APP_VERSION = 'v65 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

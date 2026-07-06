@@ -1252,10 +1252,14 @@ body {
         </div>
       </div>
 
+      <div id="meal-edit-banner" style="display:none;background:var(--surface2);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text2);align-items:center;justify-content:space-between;gap:8px;">
+        <span>✎ Editing <b id="meal-edit-name" style="color:var(--text);"></b></span>
+        <a href="javascript:void(0)" onclick="cancelMealEdit()" style="color:var(--accent);font-weight:600;white-space:nowrap;">Start new</a>
+      </div>
       <div class="section-head">Meal name</div>
       <div class="meal-name-row" style="margin-bottom:14px;">
         <input class="meal-name-input" id="meal-name-input" placeholder="e.g. Lunch, Post-workout...">
-        <button class="save-meal-btn" onclick="saveMeal()">Save</button>
+        <button class="save-meal-btn" id="save-meal-btn" onclick="saveMeal()">Save</button>
       </div>
 
       <div class="section-head">Foods in this meal</div>
@@ -3013,19 +3017,40 @@ function renderSavedMeals() {
       </div>
       <div class="smc-macros" style="margin-bottom:8px;">P:${meal.protein}g · C:${meal.carbs}g · F:${meal.fat}g · ${meal.items.length} foods</div>
       <div class="smc-actions">
-        <button class="smc-use" onclick="loadMeal(${i})">Load into builder</button>
+        <button class="smc-use" onclick="loadMeal(${i})">Edit</button>
         <button class="smc-del" onclick="deleteMeal(${i})">Delete</button>
       </div>
     </div>
   `).join('');
 }
 
+let editingMealId = null;
 function loadMeal(i) {
-  state.currentMeal = JSON.parse(JSON.stringify(state.savedMeals[i].items));
-  document.getElementById('meal-name-input').value = state.savedMeals[i].name;
+  const meal = state.savedMeals[i]; if (!meal) return;
+  state.currentMeal = JSON.parse(JSON.stringify(meal.items));
+  document.getElementById('meal-name-input').value = meal.name;
+  editingMealId = meal.id;
   builderView('build', document.querySelector('#screen-builder .foods-tab'));
   renderBuilder();
-  toast('Meal loaded into builder');
+  updateMealEditUI();
+  toast('Editing “' + meal.name + '” — tap Update to save changes');
+}
+// Reflect edit mode in the builder: banner + Save/Update button label.
+function updateMealEditUI() {
+  const editing = !!(editingMealId && state.savedMeals.some(m => m.id === editingMealId));
+  const btn = document.getElementById('save-meal-btn'); if (btn) btn.textContent = editing ? 'Update' : 'Save';
+  const banner = document.getElementById('meal-edit-banner');
+  if (banner) {
+    banner.style.display = editing ? 'flex' : 'none';
+    if (editing) { const m = state.savedMeals.find(x => x.id === editingMealId); document.getElementById('meal-edit-name').textContent = m ? m.name : ''; }
+  }
+}
+function cancelMealEdit() {
+  editingMealId = null;
+  state.currentMeal = [];
+  const ni = document.getElementById('meal-name-input'); if (ni) ni.value = '';
+  renderBuilder();
+  updateMealEditUI();
 }
 
 function deleteMeal(i) {
@@ -4006,6 +4031,7 @@ function addFoodToMeal(foodId) {
 const _origRenderBuilder = renderBuilder;
 function renderBuilder() {
   updateTargetDisplay();
+  updateMealEditUI();
   const m = calcMealMacros();
   const t = calcTDEE();
   const mpt = state.settings.mealsPerDay;
@@ -4090,15 +4116,28 @@ function saveMeal() {
   if (state.currentMeal.length === 0) { toast('Add some foods first'); return; }
   const name = document.getElementById('meal-name-input').value.trim() || 'Meal ' + (state.savedMeals.length + 1);
   const m = calcMealMacros();
-  state.savedMeals.push({
-    id: 'm_' + Date.now(),
-    name,
-    items: JSON.parse(JSON.stringify(state.currentMeal)),
-    ...m
-  });
+  const items = JSON.parse(JSON.stringify(state.currentMeal));
+  // Editing an existing meal → update it in place (drop any auto-save link so the
+  // auto-saver won't overwrite the user's edits).
+  if (editingMealId) {
+    const idx = state.savedMeals.findIndex(x => x.id === editingMealId);
+    if (idx >= 0) {
+      state.savedMeals[idx] = { id: editingMealId, name, items, ...m };
+      saveState();
+      toast('✓ "' + name + '" updated');
+      editingMealId = null;
+      document.getElementById('meal-name-input').value = '';
+      updateMealEditUI();
+      builderView('saved', document.querySelectorAll('#screen-builder .foods-tab')[1]);
+      return;
+    }
+    editingMealId = null; // original gone — fall through and save as new
+  }
+  state.savedMeals.push({ id: 'm_' + Date.now(), name, items, ...m });
   saveState();
   toast('✓ "' + name + '" saved!');
   document.getElementById('meal-name-input').value = '';
+  updateMealEditUI();
 }
 
 // ── Auto-save logged meals to the Meals tab ──────────────────────────────────
@@ -6139,7 +6178,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v60 · 2026-07-05';
+const APP_VERSION = 'v61 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

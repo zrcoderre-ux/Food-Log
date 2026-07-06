@@ -4160,6 +4160,7 @@ function saveMeal() {
     const idx = state.savedMeals.findIndex(x => x.id === editingMealId);
     if (idx >= 0) {
       state.savedMeals[idx] = { id: editingMealId, name, items, ...m };
+      state.currentMeal = []; // clear the builder after saving
       saveState();
       toast('✓ "' + name + '" updated');
       editingMealId = null;
@@ -4171,10 +4172,12 @@ function saveMeal() {
     editingMealId = null; // original gone — fall through and save as new
   }
   state.savedMeals.push({ id: 'm_' + Date.now(), name, items, ...m });
+  state.currentMeal = []; // clear the builder after saving
   saveState();
   toast('✓ "' + name + '" saved!');
   document.getElementById('meal-name-input').value = '';
   updateMealEditUI();
+  renderBuilder();
 }
 
 // ── Auto-save logged meals to the Meals tab ──────────────────────────────────
@@ -6303,7 +6306,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v65 · 2026-07-05';
+const APP_VERSION = 'v66 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -1815,6 +1815,7 @@ body {
     <div class="modal-title" id="micros-title">Edit food</div>
     <p style="font-size:12px;color:var(--text2);margin:-4px 0 10px;line-height:1.5;">All values are <b>per serving</b> — correct them to match the label. Saved to this food and applied to what you’ve already logged.</p>
     <div id="macro-fields"></div>
+    <div id="me-ingredients"></div>
     <div class="settings-label" style="margin-top:12px;">Vitamins &amp; minerals (optional)</div>
     <p style="font-size:11px;color:var(--text3);margin:-2px 0 6px;line-height:1.45;">Enter an amount (mg/mcg) <b>or</b> a % from the label — type e.g. <b>20%</b> and it converts to the amount for you.</p>
     <div id="micros-fields" style="max-height:38vh;overflow-y:auto;"></div>
@@ -2683,6 +2684,22 @@ function normalizeServing() {
   if (next !== el.value) el.value = next;
   microsEditServingPrev = { lead: parseServingLead(next), weight: parseServingWeight(next) };
 }
+// Ingredient list + allergen/diet badges for the food detail screen (read-only).
+function titleCaseWords(s) { return String(s || '').replace(/\b\w/g, c => c.toUpperCase()); }
+function ingredientInfoHtml(f) {
+  const chip = (t, cssvar) => `<span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;color:var(${cssvar});border:1px solid var(${cssvar});margin:0 5px 5px 0;">${escapeHtml(t)}</span>`;
+  const chips = [];
+  const diet = f.diet || [];
+  if (diet.includes('vegan')) chips.push(chip('🌱 Vegan', '--accent'));
+  else if (diet.includes('vegetarian')) chips.push(chip('🥬 Vegetarian', '--accent'));
+  (f.allergens || []).slice(0, 12).forEach(a => chips.push(chip('⚠️ ' + titleCaseWords(a), '--warn')));
+  const ingTxt = f.ingredients
+    ? `<div style="font-size:11px;color:var(--text2);line-height:1.55;margin-top:${chips.length ? '6px' : '0'};"><b style="color:var(--text3);font-weight:600;">Ingredients: </b>${escapeHtml(f.ingredients)}</div>`
+    : '';
+  if (!chips.length && !ingTxt) return '';
+  return `<div class="settings-label" style="margin-top:12px;">Ingredients &amp; badges</div>
+    <div style="margin:2px 0 4px;">${chips.join('')}${ingTxt}</div>`;
+}
 function openMicrosEditor(foodId) {
   ensureDataModel();
   const f = getFood(foodId); if (!f) return;
@@ -2711,6 +2728,7 @@ function openMicrosEditor(foodId) {
       <label style="flex:1;">${label} <span style="color:var(--text3);">(${unit})</span></label>
       <input type="number" inputmode="decimal" min="0" step="any" id="me-${k}" value="${f[k] != null ? f[k] : ''}" placeholder="0" style="width:90px;">
     </div>`).join('');
+  document.getElementById('me-ingredients').innerHTML = ingredientInfoHtml(f);
   document.getElementById('micros-fields').innerHTML = NUTRIENTS.map(nt => `
     <div class="settings-row" style="padding:6px 0;">
       <label style="flex:1;">${nt.label} <span style="color:var(--text3);">(${nt.unit} or %)</span></label>
@@ -4432,6 +4450,21 @@ const OFF_MICRO_KEY = {
   zinc: ['zinc'], potassium: ['potassium'], fiber: ['fiber', 'fibre'], vita: ['vitamin-a'], vitd: ['vitamin-d'],
   vite: ['vitamin-e'], vitk: ['vitamin-k'], b12: ['vitamin-b12'], iron: ['iron'], selenium: ['selenium'],
 };
+// Ingredient list, allergens, and diet flags from an OFF product record.
+function offTagName(t) { return String(t || '').replace(/^[a-z]{2}:/, '').replace(/-/g, ' ').trim(); }
+function offIngredients(p) {
+  const out = {};
+  const txt = ((p.ingredients_text_en || p.ingredients_text) || '').trim();
+  if (txt) out.ingredients = txt;
+  const al = [...new Set((p.allergens_tags || []).map(offTagName).filter(Boolean))];
+  if (al.length) out.allergens = al;
+  const an = p.ingredients_analysis_tags || [];
+  const diet = [];
+  if (an.includes('en:vegan')) diet.push('vegan');
+  else if (an.includes('en:vegetarian')) diet.push('vegetarian');
+  if (diet.length) out.diet = diet;
+  return out;
+}
 // All micronutrients OFF provides for a product, in our units (+ sodium).
 function offMicros(n, basis) {
   const m = {};
@@ -4458,13 +4491,13 @@ function offToFood(p) {
   const brand = p.brands ? p.brands.split(',')[0].trim() : '';
   const id = p.code ? 'bc' + p.code : 'off' + Math.abs(hashStr((p.product_name || '') + brand));
   const micros = offMicros(n, basis);
-  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '', micros: Object.keys(micros).length ? micros : undefined };
+  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '', micros: Object.keys(micros).length ? micros : undefined, ...offIngredients(p) };
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 // Legacy full-text index. Weak recall on its own, so it's only half the search.
 async function offSearchLegacy(q) {
   const url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
-    '&search_simple=1&action=process&json=1&page_size=30&sort_by=popularity_key&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url';
+    '&search_simple=1&action=process&json=1&page_size=30&sort_by=popularity_key&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url,ingredients_text,ingredients_text_en,allergens_tags,ingredients_analysis_tags';
   const r = await fetch(url);
   const j = await r.json();
   return j.products || [];
@@ -4473,7 +4506,7 @@ async function offSearchLegacy(q) {
 // can find by barcode also turns up when you type its name.
 async function offSearchService(q) {
   const url = 'https://search.openfoodfacts.org/search?q=' + encodeURIComponent(q) +
-    '&page_size=30&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url';
+    '&page_size=30&fields=code,product_name,brands,nutriments,serving_size,image_small_url,image_front_small_url,ingredients_text,ingredients_text_en,allergens_tags,ingredients_analysis_tags';
   const r = await fetch(url);
   if (!r.ok) return [];
   const j = await r.json();
@@ -4503,7 +4536,8 @@ function usdaToFood(item) {
   const id = 'usda' + item.fdcId;
   // Detailed nutrients win; label nutrients fill any gaps.
   const micros = { ...usdaLabelMicros(item), ...usdaMicros(arr) };
-  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda', micros: Object.keys(micros).length ? micros : undefined };
+  const ingredients = (item.ingredients || '').trim(); // branded foods carry the label ingredient list
+  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda', micros: Object.keys(micros).length ? micros : undefined, ingredients: ingredients || undefined };
 }
 const DEFAULT_USDA_KEY = 'TLNI4WjqXvsXYKciNerLPn687IfzVxwbgELZEVhi';
 function usdaKey() { ensureDataModel(); return (state.usda.apiKey || DEFAULT_USDA_KEY || '').trim(); }
@@ -4792,7 +4826,7 @@ async function lookupBarcode(code) {
   const statusEl = document.getElementById('scanner-status');
   statusEl.textContent = 'Looking up ' + code + '…';
   try {
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,nutriments,image_small_url,image_front_thumb_url`;
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,nutriments,image_small_url,image_front_thumb_url,ingredients_text,ingredients_text_en,allergens_tags,ingredients_analysis_tags`;
     const r = await fetch(url);
     const j = await r.json();
     if (!j || j.status === 0 || !j.product) { showScanNotFound(code); return; }
@@ -4809,14 +4843,18 @@ async function lookupBarcode(code) {
     const img = p.image_small_url || p.image_front_thumb_url || '';
     const micros = offMicros(n, basis); // sodium + any vitamins/minerals on the label
     const hasMicros = Object.keys(micros).length > 0;
+    const ing = offIngredients(p); // ingredient list, allergens, diet flags
     ensureDataModel();
     let food = state.customFoods.find(f => f.id === fid);
     if (!food) {
-      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img, micros: hasMicros ? micros : undefined };
+      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img, micros: hasMicros ? micros : undefined, ...ing };
       state.customFoods.push(food);
     } else {
       if (img && !food.image) food.image = img; // backfill photo for a previously-scanned item
       if (hasMicros) food.micros = { ...micros, ...(food.micros || {}) }; // add label micros, keep any existing
+      if (ing.ingredients && !food.ingredients) food.ingredients = ing.ingredients;
+      if (ing.allergens && !food.allergens) food.allergens = ing.allergens;
+      if (ing.diet && !food.diet) food.diet = ing.diet;
     }
     markFoodUsed(fid);
     // Scanned foods always go straight to Will-Eat — never into the swipe queue.
@@ -6063,7 +6101,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v55 · 2026-07-05';
+const APP_VERSION = 'v56 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

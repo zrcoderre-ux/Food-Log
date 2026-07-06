@@ -1816,6 +1816,7 @@ body {
     <p style="font-size:12px;color:var(--text2);margin:-4px 0 10px;line-height:1.5;">All values are <b>per serving</b> — correct them to match the label. Saved to this food and applied to what you’ve already logged.</p>
     <div id="macro-fields"></div>
     <div class="settings-label" style="margin-top:12px;">Vitamins &amp; minerals (optional)</div>
+    <p style="font-size:11px;color:var(--text3);margin:-2px 0 6px;line-height:1.45;">Enter an amount (mg/mcg) <b>or</b> a % from the label — type e.g. <b>20%</b> and it converts to the amount for you.</p>
     <div id="micros-fields" style="max-height:38vh;overflow-y:auto;"></div>
     <button class="btn-primary" style="margin-top:12px;" onclick="saveMicros()">Save</button>
     <button class="btn-secondary" onclick="closeModal('micros-modal')">Cancel</button>
@@ -2704,8 +2705,8 @@ function openMicrosEditor(foodId) {
     </div>`).join('');
   document.getElementById('micros-fields').innerHTML = NUTRIENTS.map(nt => `
     <div class="settings-row" style="padding:6px 0;">
-      <label style="flex:1;">${nt.label} <span style="color:var(--text3);">(${nt.unit})</span></label>
-      <input type="number" inputmode="decimal" min="0" step="any" id="mi-${nt.key}" value="${cur[nt.key] != null ? cur[nt.key] : ''}" placeholder="—" style="width:90px;">
+      <label style="flex:1;">${nt.label} <span style="color:var(--text3);">(${nt.unit} or %)</span></label>
+      <input type="text" inputmode="decimal" id="mi-${nt.key}" value="${cur[nt.key] != null ? cur[nt.key] : ''}" placeholder="— or %" style="width:90px;">
     </div>`).join('');
   openModalById('micros-modal');
 }
@@ -2725,9 +2726,18 @@ function saveMicros() {
   ov.image = microsEditImage || '';
   EDIT_MACROS.forEach(([k]) => { const v = parseFloat(document.getElementById('me-' + k).value); if (!isNaN(v) && v >= 0) ov[k] = Math.round(v * 100) / 100; });
   state.foodOverrides[id] = ov;
-  // Micronutrients
+  // Micronutrients — accept either an amount or a "% of DV" (e.g. "20%"),
+  // converting the percentage to an amount via the nutrient's daily value.
   const micros = {};
-  NUTRIENTS.forEach(nt => { const v = parseFloat(document.getElementById('mi-' + nt.key).value); if (!isNaN(v) && v > 0) micros[nt.key] = v; });
+  NUTRIENTS.forEach(nt => {
+    const raw = (document.getElementById('mi-' + nt.key).value || '').trim();
+    if (!raw) return;
+    let v;
+    const pm = raw.match(/^([\d.]+)\s*%$/);
+    if (pm) v = nt.dv * parseFloat(pm[1]) / 100;
+    else v = parseFloat(raw);
+    if (!isNaN(v) && v > 0) micros[nt.key] = Math.round(v * 100) / 100;
+  });
   if (Object.keys(micros).length) state.microOverrides[id] = micros; else delete state.microOverrides[id];
   // Apply corrections to already-logged entries of this food.
   const f = getFood(id), fm = foodMicros(f);
@@ -4403,18 +4413,20 @@ function offSodiumMg(n, basis) {
 }
 // Our nutrient keys → Open Food Facts nutriment names. OFF stores these values
 // in grams, so we convert to each nutrient's unit (mg = ×1000, mcg = ×1e6).
+// Our nutrient keys → Open Food Facts nutriment names (some have aliases).
 const OFF_MICRO_KEY = {
-  vitc: 'vitamin-c', b1: 'vitamin-b1', b2: 'vitamin-b2', b3: 'vitamin-pp', b6: 'vitamin-b6',
-  folate: 'vitamin-b9', b5: 'pantothenic-acid', calcium: 'calcium', magnesium: 'magnesium',
-  zinc: 'zinc', potassium: 'potassium', fiber: 'fiber', vita: 'vitamin-a', vitd: 'vitamin-d',
-  vite: 'vitamin-e', vitk: 'vitamin-k', b12: 'vitamin-b12', iron: 'iron', selenium: 'selenium',
+  vitc: ['vitamin-c'], b1: ['vitamin-b1'], b2: ['vitamin-b2'], b3: ['vitamin-pp', 'vitamin-b3'], b6: ['vitamin-b6'],
+  folate: ['vitamin-b9', 'folates'], b5: ['pantothenic-acid'], calcium: ['calcium'], magnesium: ['magnesium'],
+  zinc: ['zinc'], potassium: ['potassium'], fiber: ['fiber', 'fibre'], vita: ['vitamin-a'], vitd: ['vitamin-d'],
+  vite: ['vitamin-e'], vitk: ['vitamin-k'], b12: ['vitamin-b12'], iron: ['iron'], selenium: ['selenium'],
 };
 // All micronutrients OFF provides for a product, in our units (+ sodium).
 function offMicros(n, basis) {
   const m = {};
   NUTRIENTS.forEach(nt => {
-    const offk = OFF_MICRO_KEY[nt.key]; if (!offk) return;
-    let v = num(n[offk + basis]); if (!v) v = num(n[offk + '_100g']);
+    const names = OFF_MICRO_KEY[nt.key]; if (!names) return;
+    let v = 0;
+    for (const offk of names) { v = num(n[offk + basis]) || num(n[offk + '_100g']); if (v) break; }
     if (!v) return;
     const factor = nt.unit === 'mcg' ? 1e6 : nt.unit === 'mg' ? 1e3 : 1; // OFF stores grams
     m[nt.key] = Math.round(v * factor * 100) / 100;
@@ -4477,7 +4489,9 @@ function usdaToFood(item) {
   const protein = getN('203'), fat = getN('204'), carbs = getN('205');
   const brand = (item.brandOwner || item.brandName || '').trim();
   const id = 'usda' + item.fdcId;
-  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda', micros: usdaMicros(arr) };
+  // Detailed nutrients win; label nutrients fill any gaps.
+  const micros = { ...usdaLabelMicros(item), ...usdaMicros(arr) };
+  return { id, emoji: '🥗', name: (item.description || '').trim(), category: 'USDA', tags: brand ? [brand] : [], serving: '100 g', kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat), brand, source: 'usda', micros: Object.keys(micros).length ? micros : undefined };
 }
 const DEFAULT_USDA_KEY = 'TLNI4WjqXvsXYKciNerLPn687IfzVxwbgELZEVhi';
 function usdaKey() { ensureDataModel(); return (state.usda.apiKey || DEFAULT_USDA_KEY || '').trim(); }
@@ -5763,8 +5777,25 @@ function usdaMicros(arr) {
   const m = {};
   NUTRIENTS.forEach(nt => {
     const n = arr.find(x => String(x.nutrientNumber) === nt.usda);
-    const v = n ? num(n.value) : 0;
-    if (v) m[nt.key] = v;
+    if (!n) return;
+    let v = num(n.value);
+    // Some USDA entries carry only a % of Daily Value — convert it to an amount.
+    if (!v && n.percentDailyValue != null) v = nt.dv * num(n.percentDailyValue) / 100;
+    if (v > 0) m[nt.key] = Math.round(v * 100) / 100;
+  });
+  return m;
+}
+// Branded USDA foods carry a compact `labelNutrients` block that's often
+// populated when the detailed foodNutrients micros aren't. Values are in the
+// same units we use (calcium/iron/potassium/sodium mg, fiber g, vitamin D mcg,
+// vitamin C mg), so they fill gaps left by usdaMicros().
+function usdaLabelMicros(item) {
+  const ln = item && item.labelNutrients; if (!ln || typeof ln !== 'object') return {};
+  const map = { calcium: 'calcium', iron: 'iron', potassium: 'potassium', sodium: 'sodium', fiber: 'fiber', vitaminD: 'vitd', vitaminC: 'vitc' };
+  const m = {};
+  Object.keys(map).forEach(lk => {
+    const cell = ln[lk];
+    if (cell && cell.value != null) { const v = num(cell.value); if (v > 0) m[map[lk]] = Math.round(v * 100) / 100; }
   });
   return m;
 }
@@ -6006,7 +6037,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v53 · 2026-07-05';
+const APP_VERSION = 'v54 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

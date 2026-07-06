@@ -1648,11 +1648,11 @@ body {
 
 <!-- FOOD PICKER MODAL -->
 <div class="modal-overlay" id="food-picker-modal" onclick="overlayClick(event,'food-picker-modal')">
-  <div class="modal">
-    <div class="modal-title">Add food to meal</div>
-    <input type="text" class="food-search" id="food-search-input" placeholder="Search foods (USDA + Open Food Facts)…" oninput="filterFoodPicker()">
-    <div class="food-pick-list" id="food-pick-list"></div>
-    <button class="btn-secondary" onclick="closeModal('food-picker-modal')" style="margin-top:12px;">Cancel</button>
+  <div class="modal" style="height:82dvh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-title" style="flex-shrink:0;">Add food to meal</div>
+    <input type="text" class="food-search" id="food-search-input" placeholder="Search foods (USDA + Open Food Facts)…" oninput="filterFoodPicker()" style="flex-shrink:0;">
+    <div class="food-pick-list" id="food-pick-list" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
+    <button class="btn-secondary" onclick="closeModal('food-picker-modal')" style="margin-top:12px;flex-shrink:0;">Cancel</button>
   </div>
 </div>
 
@@ -6306,7 +6306,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v66 · 2026-07-05';
+const APP_VERSION = 'v67 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

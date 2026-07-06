@@ -1823,10 +1823,10 @@ body {
     <div style="flex:1 1 auto;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;">
       <p style="font-size:12px;color:var(--text2);margin:-4px 0 10px;line-height:1.5;">All values are <b>per serving</b> — correct them to match the label. Saved to this food and applied to what you’ve already logged.</p>
       <div id="macro-fields"></div>
-      <div id="me-ingredients"></div>
       <div class="settings-label" style="margin-top:12px;">Vitamins &amp; minerals (optional)</div>
       <p style="font-size:11px;color:var(--text3);margin:-2px 0 6px;line-height:1.45;">Enter an amount (mg/mcg) <b>or</b> a % from the label — type e.g. <b>20%</b> and it converts to the amount for you.</p>
       <div id="micros-fields"></div>
+      <div id="me-ingredients"></div>
     </div>
     <div style="flex-shrink:0;padding-top:10px;">
       <button class="btn-primary" onclick="saveMicros()">Save</button>
@@ -6119,7 +6119,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v58 · 2026-07-05';
+const APP_VERSION = 'v59 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

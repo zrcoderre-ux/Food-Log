@@ -4332,6 +4332,27 @@ function offSodiumMg(n, basis) {
   if (!s) { const salt = num(n['salt' + basis]) || num(n['salt_100g']); if (salt) s = salt / 2.5; }
   return s ? Math.round(s * 1000) : 0;
 }
+// Our nutrient keys → Open Food Facts nutriment names. OFF stores these values
+// in grams, so we convert to each nutrient's unit (mg = ×1000, mcg = ×1e6).
+const OFF_MICRO_KEY = {
+  vitc: 'vitamin-c', b1: 'vitamin-b1', b2: 'vitamin-b2', b3: 'vitamin-pp', b6: 'vitamin-b6',
+  folate: 'vitamin-b9', b5: 'pantothenic-acid', calcium: 'calcium', magnesium: 'magnesium',
+  zinc: 'zinc', potassium: 'potassium', fiber: 'fiber', vita: 'vitamin-a', vitd: 'vitamin-d',
+  vite: 'vitamin-e', vitk: 'vitamin-k', b12: 'vitamin-b12', iron: 'iron', selenium: 'selenium',
+};
+// All micronutrients OFF provides for a product, in our units (+ sodium).
+function offMicros(n, basis) {
+  const m = {};
+  NUTRIENTS.forEach(nt => {
+    const offk = OFF_MICRO_KEY[nt.key]; if (!offk) return;
+    let v = num(n[offk + basis]); if (!v) v = num(n[offk + '_100g']);
+    if (!v) return;
+    const factor = nt.unit === 'mcg' ? 1e6 : nt.unit === 'mg' ? 1e3 : 1; // OFF stores grams
+    m[nt.key] = Math.round(v * factor * 100) / 100;
+  });
+  const na = offSodiumMg(n, basis); if (na) m.sodium = na;
+  return m;
+}
 function offToFood(p) {
   const n = offNutriments(p);
   const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
@@ -4343,8 +4364,8 @@ function offToFood(p) {
   const serving = perServing && p.serving_size ? p.serving_size : (perServing ? '1 serving' : '100 g');
   const brand = p.brands ? p.brands.split(',')[0].trim() : '';
   const id = p.code ? 'bc' + p.code : 'off' + Math.abs(hashStr((p.product_name || '') + brand));
-  const sodium = offSodiumMg(n, basis);
-  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '', micros: sodium ? { sodium } : undefined };
+  const micros = offMicros(n, basis);
+  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '', micros: Object.keys(micros).length ? micros : undefined };
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 // Legacy full-text index. Weak recall on its own, so it's only half the search.
@@ -4679,15 +4700,16 @@ async function lookupBarcode(code) {
     const name = (p.product_name || 'Scanned item').trim();
     const fid = 'bc' + code;
     const img = p.image_small_url || p.image_front_thumb_url || '';
-    const sodium = offSodiumMg(n, basis); // sodium (mg) straight off the label
+    const micros = offMicros(n, basis); // sodium + any vitamins/minerals on the label
+    const hasMicros = Object.keys(micros).length > 0;
     ensureDataModel();
     let food = state.customFoods.find(f => f.id === fid);
     if (!food) {
-      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img, micros: sodium ? { sodium } : undefined };
+      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img, micros: hasMicros ? micros : undefined };
       state.customFoods.push(food);
     } else {
       if (img && !food.image) food.image = img; // backfill photo for a previously-scanned item
-      if (sodium && !(food.micros && food.micros.sodium)) food.micros = { ...(food.micros || {}), sodium };
+      if (hasMicros) food.micros = { ...micros, ...(food.micros || {}) }; // add label micros, keep any existing
     }
     markFoodUsed(fid);
     // Scanned foods always go straight to Will-Eat — never into the swipe queue.
@@ -5903,7 +5925,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v47 · 2026-07-05';
+const APP_VERSION = 'v48 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

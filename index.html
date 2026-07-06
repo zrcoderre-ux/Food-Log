@@ -4325,6 +4325,13 @@ function offKcalFrom(n, basis) {
   if (!k) { const kj = num(n['energy-kj' + basis]) || num(n['energy-kj_100g']) || num(n['energy' + basis]) || num(n['energy_100g']); if (kj) k = kj / 4.184; }
   return k;
 }
+// Sodium (mg) from OFF nutriments — sodium is stored in grams; fall back to
+// salt (g) ÷ 2.5. Lets scanned packaged foods carry the sodium on their label.
+function offSodiumMg(n, basis) {
+  let s = num(n['sodium' + basis]) || num(n['sodium_100g']);
+  if (!s) { const salt = num(n['salt' + basis]) || num(n['salt_100g']); if (salt) s = salt / 2.5; }
+  return s ? Math.round(s * 1000) : 0;
+}
 function offToFood(p) {
   const n = offNutriments(p);
   const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
@@ -4336,7 +4343,8 @@ function offToFood(p) {
   const serving = perServing && p.serving_size ? p.serving_size : (perServing ? '1 serving' : '100 g');
   const brand = p.brands ? p.brands.split(',')[0].trim() : '';
   const id = p.code ? 'bc' + p.code : 'off' + Math.abs(hashStr((p.product_name || '') + brand));
-  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '' };
+  const sodium = offSodiumMg(n, basis);
+  return { id, emoji: '🏷️', name: (p.product_name || '').trim(), category: 'Database', tags: brand ? [brand] : [], serving, kcal, protein, carbs, fat, barcode: p.code || null, brand, image: p.image_small_url || p.image_front_small_url || '', micros: sodium ? { sodium } : undefined };
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0; } return h; }
 // Legacy full-text index. Weak recall on its own, so it's only half the search.
@@ -4671,13 +4679,15 @@ async function lookupBarcode(code) {
     const name = (p.product_name || 'Scanned item').trim();
     const fid = 'bc' + code;
     const img = p.image_small_url || p.image_front_thumb_url || '';
+    const sodium = offSodiumMg(n, basis); // sodium (mg) straight off the label
     ensureDataModel();
     let food = state.customFoods.find(f => f.id === fid);
     if (!food) {
-      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img };
+      food = { id: fid, emoji: '🏷️', name, category: 'Scanned', tags: p.brands ? [p.brands] : [], serving, kcal, protein, carbs, fat, barcode: code, image: img, micros: sodium ? { sodium } : undefined };
       state.customFoods.push(food);
-    } else if (img && !food.image) {
-      food.image = img; // backfill photo for a previously-scanned item
+    } else {
+      if (img && !food.image) food.image = img; // backfill photo for a previously-scanned item
+      if (sodium && !(food.micros && food.micros.sodium)) food.micros = { ...(food.micros || {}), sodium };
     }
     markFoodUsed(fid);
     // Scanned foods always go straight to Will-Eat — never into the swipe queue.
@@ -5602,6 +5612,8 @@ function renderEnergyInsights() {
 //   window 7 = average over a week (fat-soluble vitamins, B12, iron — big stores)
 // Targets are FDA Daily Values; `usda` is the FoodData Central nutrientNumber.
 const NUTRIENTS = [
+  // Sodium is a LIMIT (stay under), not a target — handled specially in scoring & display.
+  { key: 'sodium', label: 'Sodium', unit: 'mg', dv: 2300, window: 1, tier: 'daily', usda: '307', limit: true },
   { key: 'vitc', label: 'Vitamin C', unit: 'mg', dv: 90, window: 1, tier: 'daily', usda: '401' },
   { key: 'b1', label: 'Thiamin (B1)', unit: 'mg', dv: 1.2, window: 1, tier: 'daily', usda: '404' },
   { key: 'b2', label: 'Riboflavin (B2)', unit: 'mg', dv: 1.3, window: 1, tier: 'daily', usda: '405' },
@@ -5687,10 +5699,13 @@ function renderNutrients() {
   list.innerHTML = ['daily', 'few', 'week'].map(tier => {
     const rows = byTier[tier].map(s => {
       const pct = Math.min(100, Math.round(s.pct * 100));
+      // A limit (sodium) is good while under and bad when over — invert the color.
+      const color = s.nt.limit ? (s.pct > 1 ? 'var(--warn)' : 'var(--accent)') : nutrientColor(s.pct);
+      const suffix = s.nt.limit ? ' limit' : '';
       return `<div class="nutrient-row">
         <div class="nr-top"><span class="nr-name">${s.nt.label}</span>
-          <span class="nr-val">${fmtAmt(s.have, s.nt.unit)} / ${fmtAmt(s.need, s.nt.unit)}</span></div>
-        <div class="nr-bar"><div class="nr-fill" style="width:${pct}%;background:${nutrientColor(s.pct)};"></div></div>
+          <span class="nr-val">${fmtAmt(s.have, s.nt.unit)} / ${fmtAmt(s.need, s.nt.unit)}${suffix}</span></div>
+        <div class="nr-bar"><div class="nr-fill" style="width:${pct}%;background:${color};"></div></div>
       </div>`;
     }).join('');
     const win = tier === 'daily' ? 'today' : tier === 'few' ? 'last 3 days' : 'last 7 days';
@@ -5771,6 +5786,7 @@ function recScore(f, ctx) {
   let microVal = 0;
   const fm = foodMicros(f);
   if (fm) ctx.status.forEach(s => {
+    if (s.nt.limit) return; // limit nutrients (e.g. sodium) aren't a goal to fill
     if (s.pct < 1 && fm[s.nt.key]) {
       const gap = Math.max(0, s.need - s.have);
       microVal += (1 - s.pct) * Math.min(fm[s.nt.key], gap) / (s.need || 1);
@@ -5802,7 +5818,7 @@ function inventoryUrgencyBoost(f) {
 function micronutrientRecsHtml() {
   const status = nutrientStatus(new Date());
   if (!hasMicroData(status)) return '';
-  const gaps = status.filter(s => s.pct < 0.7).sort((a, b) => a.pct - b.pct).slice(0, 4);
+  const gaps = status.filter(s => !s.nt.limit && s.pct < 0.7).sort((a, b) => a.pct - b.pct).slice(0, 4);
   if (!gaps.length) return '<div class="rec-nutri-head">Vitamins & minerals</div><div class="rec-empty" style="padding:10px;">You’re on track with your tracked nutrients too. 💪</div>';
   return '<div class="rec-nutri-head">You’re running low on</div>' + gaps.map(s => {
     const src = (NUTRIENT_SOURCES[s.nt.key] || []).slice(0, 4);
@@ -5887,7 +5903,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v46 · 2026-07-05';
+const APP_VERSION = 'v47 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

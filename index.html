@@ -884,6 +884,12 @@ body {
 }
 .qty-preview b { color: var(--text); font-weight: 600; }
 .qty-preview .qp-kcal { width: 100%; font-size: 20px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+.qty-micro-preview {
+  display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 11px; color: var(--text3);
+  margin: -8px 2px 12px;
+}
+.qty-micro-preview b { color: var(--text2); font-weight: 600; }
+.qty-micro-preview .qmp-head { width: 100%; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); margin-bottom: 1px; }
 .qty-stepper { display: flex; align-items: center; gap: 8px; }
 .qty-stepper button {
   width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border);
@@ -1783,6 +1789,7 @@ body {
   <div class="modal">
     <div class="modal-title" id="qty-title">Add food</div>
     <div id="qty-macro-preview" class="qty-preview"></div>
+    <div id="qty-micro-preview" class="qty-micro-preview"></div>
     <div style="text-align:center;margin:-4px 0 10px;"><a href="#" onclick="editPendingFood();return false;" style="font-size:12px;color:var(--accent);">✎ Correct calories &amp; macros</a></div>
     <div class="form-group">
       <label>Number of servings <span id="qty-serving-hint" style="color:var(--text3);font-weight:400;"></span></label>
@@ -4554,6 +4561,18 @@ function renderQtyPreview() {
     `<span>Protein <b>${Math.round(p.protein * q)}g</b></span>` +
     `<span>Carbs <b>${Math.round(p.carbs * q)}g</b></span>` +
     `<span>Fat <b>${Math.round(p.fat * q)}g</b></span>`;
+  // Vitamins & minerals, scaled by the same quantity (display only).
+  const mp = document.getElementById('qty-micro-preview');
+  if (mp) {
+    const m = p.micros || {};
+    const parts = NUTRIENTS.filter(nt => m[nt.key] != null && m[nt.key] > 0).map(nt => {
+      const v = m[nt.key] * q;
+      const val = v >= 100 ? Math.round(v) : Math.round(v * 10) / 10;
+      return `<span>${escapeHtml(nt.label)} <b>${val}${nt.unit}</b></span>`;
+    });
+    mp.innerHTML = parts.length ? `<span class="qmp-head">Vitamins &amp; minerals</span>${parts.join('')}` : '';
+    mp.style.display = parts.length ? '' : 'none';
+  }
 }
 function confirmLog() {
   const p = pendingLog; if (!p) return;
@@ -5925,7 +5944,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v49 · 2026-07-05';
+const APP_VERSION = 'v50 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

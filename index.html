@@ -2206,7 +2206,7 @@ function switchTab(id, el) {
   document.querySelectorAll('.tab-btn').forEach(t=>t.classList.remove('active'));
   document.getElementById('screen-'+id).classList.add('active');
   el.classList.add('active');
-  if (id === 'foods') renderSwipeCard();
+  if (id === 'foods') foodsEntry();
   if (id === 'builder') renderBuilder();
   if (id === 'planner') renderPlanner();
   if (id === 'history') renderHistory();
@@ -2297,7 +2297,9 @@ function doSwipe(dir) {
   setTimeout(() => {
     card.classList.remove('fly-yes','fly-no');
     unratedQueue.shift();
-    renderSwipeCard();
+    // Rated the last one? Jump to the food list instead of the "all rated" screen.
+    if (unratedQueue.length === 0) { updateRatedBar(); showView('list'); }
+    else renderSwipeCard();
   }, 350);
 }
 
@@ -2340,8 +2342,15 @@ function setupDrag() {
 function showView(v) {
   ['swipe', 'list', 'inventory'].forEach(x => { const el = document.getElementById(x + '-view'); if (el) el.style.display = x === v ? 'block' : 'none'; });
   const sb = document.getElementById('foods-add-search'); if (sb) sb.value = '';
+  if (v === 'swipe') renderSwipeCard();
   if (v === 'list') renderFoodsList('yes');
   if (v === 'inventory') renderInventory();
+}
+// Entering the Foods tab: if everything's already rated, skip the swipe/"all
+// rated" screen and go straight to the food list.
+function foodsEntry() {
+  buildQueue();
+  showView(unratedQueue.length === 0 ? 'list' : 'swipe');
 }
 
 let currentListFilter = 'yes';
@@ -5954,7 +5963,7 @@ switchTab = function (id, el) {
   const scr = document.getElementById('screen-' + id); if (scr) scr.classList.add('active');
   if (el) el.classList.add('active');
   if (id === 'today') renderDiary();
-  else if (id === 'foods') renderSwipeCard();
+  else if (id === 'foods') foodsEntry();
   else if (id === 'builder') renderBuilder();
   else if (id === 'planner') renderPlanner();
   else if (id === 'history') renderHistory();
@@ -5989,7 +5998,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v51 · 2026-07-05';
+const APP_VERSION = 'v52 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

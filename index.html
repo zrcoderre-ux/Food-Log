@@ -2118,6 +2118,10 @@ function acceptedFoods() { return allFoods().filter(f => state.ratings[f.id] ===
 
 // ════════════════════════════════════════ STORAGE ═════════════════════════════
 function saveState() { localStorage.setItem('plateiq_v1', JSON.stringify(state)); }
+// Record a deletion so a later cloud sync won't merge the item back in. Keyed
+// "type:id" with the deletion time; re-creating an item (which bumps its
+// foodUsage / uses a fresh id) overrides the tombstone.
+function markDeleted(key) { ensureDataModel(); state.deleted[key] = Date.now(); }
 function loadState() {
   const raw = localStorage.getItem('plateiq_v1');
   if (raw) {
@@ -2506,6 +2510,7 @@ function invAdjust(id, delta) {
 function deleteInventory(id) {
   if (!confirm('Remove this item from your inventory?')) return;
   ensureDataModel();
+  markDeleted('inv:' + id);
   state.inventory = state.inventory.filter(x => x.id !== id);
   saveState();
   renderInventory(); renderDiary();
@@ -2559,6 +2564,9 @@ function deleteFoodFromList(id) {
   delete state.foodOverrides[id];
   const wasCustom = state.customFoods.some(f => f.id === id);
   state.customFoods = state.customFoods.filter(f => f.id !== id); // fully removes scanned/custom foods
+  // Tombstones so a later sync doesn't merge the food (or its rating) back in.
+  markDeleted('cf:' + id);
+  markDeleted('rt:' + id);
   // Built-in library foods can't be spliced out of an array, so mark them
   // removed — otherwise clearing the rating just drops them back into the
   // swipe queue. Scanned/custom foods aren't marked, so re-scanning re-adds them.
@@ -2979,6 +2987,7 @@ function loadMeal(i) {
 
 function deleteMeal(i) {
   if (!confirm('Delete "' + state.savedMeals[i].name + '"?')) return;
+  const m = state.savedMeals[i]; if (m && m.id) markDeleted('sm:' + m.id);
   state.savedMeals.splice(i,1);
   saveState();
   renderSavedMeals();
@@ -3902,6 +3911,7 @@ function deleteRecipeFromView() {
   if (!viewingRecipeId) return;
   const r = state.recipes.find(r => r.id === viewingRecipeId);
   if (!r || !confirm(`Delete "${r.name}"?`)) return;
+  markDeleted('rc:' + viewingRecipeId);
   state.recipes = state.recipes.filter(r => r.id !== viewingRecipeId);
   saveState();
   closeModal('recipe-view-modal');
@@ -4194,6 +4204,7 @@ function ensureDataModel() {
   if (!state.ratings) state.ratings = {};
   if (!state.customFoods) state.customFoods = [];
   if (!state.removed) state.removed = {}; // { foodId: true }  foods deleted from the app entirely
+  if (!state.deleted) state.deleted = {}; // { 'type:id': timestamp }  deletion tombstones so sync doesn't resurrect removed items
   if (!state.scannedRatedMigration) {
     (state.customFoods || []).forEach(f => {
       if ((f.barcode || f.category === 'Scanned') && !(f.id in state.ratings)) state.ratings[f.id] = 'yes';
@@ -4322,6 +4333,7 @@ function renderDiaryMeals(key) {
 function removeDiaryEntry(key, id) {
   const d = state.diary[key]; if (!d) return;
   const gone = d.entries.find(e => e.id === id);
+  markDeleted('de:' + key + ':' + id);
   d.entries = d.entries.filter(e => e.id !== id);
   saveState();
   if (gone) syncSlotMeal(key, gone.slot);
@@ -5301,26 +5313,40 @@ function mergeDaily(a, b) {
 }
 function mergeCloudInto(cloud) {
   if (!cloud) return;
+  ensureDataModel();
   const cloudNewer = (cloud._updatedAt || 0) > (state._updatedAt || 0);
   if (cloud.settings && cloudNewer) state.settings = { ...state.settings, ...cloud.settings };
   if (cloud.planner && cloudNewer) state.planner = { ...state.planner, ...cloud.planner };
-  state.customFoods = unionById(state.customFoods, cloud.customFoods);
-  state.savedMeals = unionById(state.savedMeals, cloud.savedMeals);
-  state.recipes = unionById(state.recipes, cloud.recipes);
+  // Merge deletion tombstones (latest wins) and removed-food flags from both
+  // sides FIRST, so the union steps below can drop anything either device deleted.
+  state.removed = { ...(cloud.removed || {}), ...(state.removed || {}) };
+  { const cdel = cloud.deleted || {}, sdel = state.deleted || {}, out = { ...cdel }; Object.keys(sdel).forEach(k => { out[k] = Math.max(out[k] || 0, sdel[k]); }); state.deleted = out; }
+  // foodUsage merged early so the recency check below sees the newest use.
+  { const cu = cloud.foodUsage || {}, su = state.foodUsage || {}, out = { ...cu }; Object.keys(su).forEach(k => { out[k] = Math.max(out[k] || 0, su[k]); }); state.foodUsage = out; }
+  const del = state.deleted, usage = state.foodUsage;
+  // A food id counts as deleted if it's flagged removed, or its tombstone is at
+  // least as recent as the last time the food was used (i.e. not re-added since).
+  const foodDeleted = (id) => (state.removed[id]) || ((del['cf:' + id] != null) && del['cf:' + id] >= (usage[id] || 0));
+  const tombed = (key) => del[key] != null;
+  state.customFoods = unionById(state.customFoods, cloud.customFoods).filter(f => !foodDeleted(f.id));
+  state.savedMeals = unionById(state.savedMeals, cloud.savedMeals).filter(m => !tombed('sm:' + m.id));
+  state.recipes = unionById(state.recipes, cloud.recipes).filter(r => !tombed('rc:' + r.id));
   state.ratings = cloudNewer ? { ...state.ratings, ...cloud.ratings } : { ...cloud.ratings, ...state.ratings };
+  Object.keys(state.ratings).forEach(id => {
+    if (state.removed[id] || ((del['rt:' + id] != null) && del['rt:' + id] >= (usage[id] || 0))) delete state.ratings[id];
+  });
   state.diary = state.diary || {};
   const cd = cloud.diary || {};
   Object.keys(cd).forEach(k => {
     const le = (state.diary[k] && state.diary[k].entries) || [];
     const ce = (cd[k] && cd[k].entries) || [];
-    state.diary[k] = { entries: unionById(le, ce) };
+    state.diary[k] = { entries: unionById(le, ce).filter(e => !tombed('de:' + k + ':' + e.id)) };
   });
   state.healthDaily = mergeDaily(state.healthDaily, cloud.healthDaily);
   state.microOverrides = { ...(cloud.microOverrides || {}), ...(state.microOverrides || {}) };
   state.hydration = mergeDaily(state.hydration, cloud.hydration);
-  state.inventory = unionById(state.inventory, cloud.inventory);
+  state.inventory = unionById(state.inventory, cloud.inventory).filter(x => !tombed('inv:' + x.id));
   state.foodOverrides = { ...(cloud.foodOverrides || {}), ...(state.foodOverrides || {}) };
-  { const cu = cloud.foodUsage || {}, su = state.foodUsage || {}, out = { ...cu }; Object.keys(su).forEach(k => { out[k] = Math.max(out[k] || 0, su[k]); }); state.foodUsage = out; }
   _origSaveState();
 }
 async function pushCloud() {
@@ -6037,7 +6063,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v54 · 2026-07-05';
+const APP_VERSION = 'v55 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

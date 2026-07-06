@@ -1288,14 +1288,17 @@ body {
     </div>
 
     <div id="recipes-view" style="display:none;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
         <div class="section-head" style="margin:0;">My recipes</div>
-        <button class="save-meal-btn" onclick="openRecipeUpload()">＋ Add recipe</button>
+        <div style="display:flex;gap:8px;">
+          <button class="save-meal-btn" onclick="openRecipeBuilder()">＋ Build recipe</button>
+          <button class="btn-secondary" style="padding:8px 12px;width:auto;margin:0;" onclick="openRecipeUpload()">Upload / paste</button>
+        </div>
       </div>
       <div id="recipes-list"></div>
       <div id="recipes-empty" class="empty-state">
-        <span class="es-icon">📄</span>
-        <p>No recipes yet. Upload a PDF or paste recipe text to get started.</p>
+        <span class="es-icon">📖</span>
+        <p>No recipes yet. Build one from your foods, or upload/paste recipe text. Saved recipes show up in your Foods tab too.</p>
       </div>
     </div>
   </div>
@@ -1690,6 +1693,40 @@ body {
         <textarea id="recipe-paste-text" style="width:100%;height:140px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="Paste the full recipe including title, ingredients, and instructions..."></textarea>
       </div>
       <button class="btn-primary" onclick="parseRecipeText()">Parse recipe</button>
+    </div>
+  </div>
+</div>
+
+<!-- RECIPE BUILDER MODAL (build a recipe from component foods) -->
+<div class="modal-overlay" id="recipe-build-modal" onclick="overlayClick(event,'recipe-build-modal')">
+  <div class="modal" style="height:88dvh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-title" id="recipe-build-title" style="flex-shrink:0;">Build a recipe</div>
+    <div style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+      <div class="form-group">
+        <label>Recipe name</label>
+        <input type="text" id="rb-name" placeholder="e.g. Chicken burrito bowl">
+      </div>
+      <div class="form-group">
+        <label>Servings this recipe makes (yield)</label>
+        <input type="number" id="rb-servings" min="1" step="1" value="1" placeholder="4" oninput="renderRecipeBuilder()">
+      </div>
+      <div id="rb-preview" style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text2);"></div>
+      <div class="section-head">Foods in this recipe</div>
+      <div id="rb-items"></div>
+      <button class="add-food-btn" style="margin-top:8px;" onclick="openFoodPicker('recipe')">＋ Add food from your list</button>
+      <button class="add-food-btn" style="margin-top:8px;" onclick="closeModal('recipe-build-modal');openScanner('willeat')">📷 Scan a barcode to add a food</button>
+      <div class="form-group" style="margin-top:14px;">
+        <label>Extra ingredients <span style="color:var(--text3);font-weight:400;">(optional, one per line — added to the list)</span></label>
+        <textarea id="rb-ingredients" style="width:100%;height:70px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="e.g. 2 tbsp olive oil&#10;Salt & pepper to taste"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Instructions <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
+        <textarea id="rb-instructions" style="width:100%;height:70px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="Step-by-step (optional)"></textarea>
+      </div>
+    </div>
+    <div style="flex-shrink:0;padding-top:10px;">
+      <button class="btn-primary" onclick="saveBuiltRecipe()">Save recipe</button>
+      <button class="btn-secondary" onclick="closeModal('recipe-build-modal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -2119,7 +2156,47 @@ function applyFoodOverride(f) {
   if (ov.name && ov.name !== f.name) merged.origName = f.name; // keep original name searchable
   return merged;
 }
-function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods].filter(f => !(state.removed && state.removed[f.id])).map(applyFoodOverride); }
+function allFoods() { return [...FOOD_LIBRARY, ...state.customFoods, ...recipeFoods()].filter(f => !(state.removed && state.removed[f.id])).map(applyFoodOverride); }
+// Resolve a recipe component id to a food OR another recipe, WITHOUT going
+// through allFoods()/getFood() (which include recipeFoods) — avoids recursion.
+function lookupFoodOrRecipe(id) {
+  const f = [...FOOD_LIBRARY, ...state.customFoods].map(applyFoodOverride).find(x => x.id === id);
+  if (f) return f;
+  const r = (state.recipes || []).find(x => x.id === id);
+  if (r) return { id: r.id, name: r.name, emoji: '📖', image: null, serving: r.serving || '1 serving', kcal: +r.kcal || 0, protein: +r.protein || 0, carbs: +r.carbs || 0, fat: +r.fat || 0, micros: r.micros || null };
+  return null;
+}
+// Sum the nutrition of a recipe's component foods (× their quantities).
+function recipeTotals(items) {
+  let kcal = 0, protein = 0, carbs = 0, fat = 0; const micros = {};
+  (items || []).forEach(it => {
+    const food = lookupFoodOrRecipe(it.foodId);
+    if (!food) return;
+    const q = it.qty || 1;
+    kcal += (+food.kcal || 0) * q; protein += (+food.protein || 0) * q; carbs += (+food.carbs || 0) * q; fat += (+food.fat || 0) * q;
+    const fm = foodMicros(food);
+    if (fm) Object.keys(fm).forEach(k => { micros[k] = (micros[k] || 0) + fm[k] * q; });
+  });
+  return { kcal, protein, carbs, fat, micros };
+}
+// A recipe's ingredient list as one string (component food names + any typed lines).
+function recipeIngredientsText(r) {
+  const parts = [];
+  (r.items || []).forEach(it => { const f = lookupFoodOrRecipe(it.foodId); if (f) parts.push((it.qty && it.qty !== 1 ? it.qty + '× ' : '') + f.name); });
+  (r.ingredients || []).forEach(line => { if (line) parts.push(line); });
+  return parts.join(', ');
+}
+// Each saved recipe projected as a single custom food (its per-serving nutrition).
+function recipeFoods() {
+  return (state.recipes || []).map(r => ({
+    id: r.id, name: r.name, emoji: '📖', category: 'Recipe',
+    serving: r.serving || '1 serving',
+    kcal: +r.kcal || 0, protein: +r.protein || 0, carbs: +r.carbs || 0, fat: +r.fat || 0,
+    micros: (r.micros && Object.keys(r.micros).length) ? r.micros : null,
+    ingredients: recipeIngredientsText(r),
+    tags: ['Recipe'], custom: true, recipe: true,
+  }));
+}
 function getFood(id) { return allFoods().find(f => f.id === id); }
 // Match a food by its current name OR its original (pre-rename) name.
 function foodMatches(f, q) {
@@ -2981,10 +3058,92 @@ function removeMealItem(i) {
   renderBuilder();
 }
 
-function openFoodPicker() {
+let foodPickerTarget = 'meal';
+function openFoodPicker(target) {
+  foodPickerTarget = target || 'meal';
   document.getElementById('food-search-input').value = '';
   filterFoodPicker();
   document.getElementById('food-picker-modal').classList.add('open');
+}
+
+// ════════════════════════════════════════ RECIPE BUILDER ══════════════════════
+let recipeBuild = null; // working draft: { editId, items:[{foodId,qty}] }
+function openRecipeBuilder(editId) {
+  ensureDataModel();
+  const r = editId ? state.recipes.find(x => x.id === editId) : null;
+  recipeBuild = { editId: editId || null, items: (r && r.items) ? JSON.parse(JSON.stringify(r.items)) : [] };
+  document.getElementById('recipe-build-title').textContent = r ? 'Edit recipe' : 'Build a recipe';
+  document.getElementById('rb-name').value = r ? r.name : '';
+  document.getElementById('rb-servings').value = r ? (r.servings || 1) : 1;
+  document.getElementById('rb-ingredients').value = r ? (r.ingredients || []).join('\n') : '';
+  document.getElementById('rb-instructions').value = r ? (r.instructions || []).join('\n') : '';
+  renderRecipeBuilder();
+  openModalById('recipe-build-modal');
+}
+function recipeBuildAddFood(foodId) {
+  if (!recipeBuild) recipeBuild = { editId: null, items: [] };
+  const ex = recipeBuild.items.find(i => i.foodId === foodId);
+  if (ex) ex.qty = Math.round((ex.qty + 0.5) * 100) / 100; else recipeBuild.items.push({ foodId, qty: 1 });
+  closeModal('food-picker-modal');
+  openModalById('recipe-build-modal'); // the picker closed the builder; reopen it
+  renderRecipeBuilder();
+}
+function rbAdjustQty(i, delta) {
+  const it = recipeBuild.items[i]; if (!it) return;
+  it.qty = Math.max(0.5, Math.round((it.qty + delta * 0.5) * 100) / 100);
+  renderRecipeBuilder();
+}
+function rbRemove(i) { recipeBuild.items.splice(i, 1); renderRecipeBuilder(); }
+function renderRecipeBuilder() {
+  if (!recipeBuild) return;
+  const servings = Math.max(1, parseInt(document.getElementById('rb-servings').value) || 1);
+  const t = recipeTotals(recipeBuild.items);
+  const per = (v) => Math.round(v / servings);
+  document.getElementById('rb-preview').innerHTML = recipeBuild.items.length
+    ? `<b>Per serving</b> (÷ ${servings}): ${per(t.kcal)} cal · P${per(t.protein)}g C${per(t.carbs)}g F${per(t.fat)}g<br><span style="color:var(--text3);">Whole recipe: ${Math.round(t.kcal)} cal</span>`
+    : `<span style="color:var(--text3);">Add foods to see the per-serving nutrition.</span>`;
+  const list = document.getElementById('rb-items');
+  list.innerHTML = recipeBuild.items.length ? recipeBuild.items.map((it, i) => {
+    const f = lookupFoodOrRecipe(it.foodId); if (!f) return '';
+    return `<div class="meal-item">
+      <span class="mi-emoji">${foodIcon(f, 24)}</span>
+      <div class="mi-info"><div class="mi-name">${escapeHtml(f.name)}</div>
+        <div class="mi-macros">${Math.round((f.kcal||0)*it.qty)} cal · ${Math.round((f.protein||0)*it.qty)}g P · ${Math.round((f.carbs||0)*it.qty)}g C · ${Math.round((f.fat||0)*it.qty)}g F</div></div>
+      <div class="mi-qty"><div class="qty-btn" onclick="rbAdjustQty(${i},-1)">−</div><div class="qty-val">${it.qty}</div><div class="qty-btn" onclick="rbAdjustQty(${i},1)">+</div></div>
+      <div class="mi-remove" onclick="rbRemove(${i})">✕</div>
+    </div>`;
+  }).join('') : `<div style="text-align:center;padding:12px;font-size:13px;color:var(--text3);">No foods yet — add some below.</div>`;
+}
+function saveBuiltRecipe() {
+  ensureDataModel();
+  const name = (document.getElementById('rb-name').value || '').trim();
+  if (!name) { toast('Enter a recipe name'); return; }
+  if (!recipeBuild || !recipeBuild.items.length) { toast('Add at least one food'); return; }
+  const servings = Math.max(1, parseInt(document.getElementById('rb-servings').value) || 1);
+  const t = recipeTotals(recipeBuild.items);
+  const per = (v) => Math.round((v / servings) * 100) / 100;
+  const microsPer = {}; Object.keys(t.micros).forEach(k => { const v = t.micros[k] / servings; if (v > 0) microsPer[k] = Math.round(v * 100) / 100; });
+  const ingredients = (document.getElementById('rb-ingredients').value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const instructions = (document.getElementById('rb-instructions').value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const id = recipeBuild.editId || ('r_' + Date.now());
+  const recipe = {
+    id, name, servings, items: JSON.parse(JSON.stringify(recipeBuild.items)),
+    ingredients, instructions, source: '', serving: '1 serving',
+    kcal: per(t.kcal), protein: per(t.protein), carbs: per(t.carbs), fat: per(t.fat), micros: microsPer,
+    built: true, tags: ['Recipe'], createdAt: new Date().toISOString(),
+  };
+  const idx = state.recipes.findIndex(x => x.id === id);
+  if (idx >= 0) { recipe.createdAt = state.recipes[idx].createdAt || recipe.createdAt; state.recipes[idx] = recipe; }
+  else state.recipes.push(recipe);
+  // A recipe behaves like any other food: rated in, and any old macro override
+  // is cleared so the freshly computed values show.
+  state.ratings[id] = 'yes'; markFoodUsed(id);
+  delete state.foodOverrides[id]; delete state.notSnack[id];
+  saveState();
+  closeModal('recipe-build-modal');
+  toast(`📖 "${name}" saved`);
+  renderRecipesList();
+  if (typeof renderFoodsList === 'function') renderFoodsList(currentListFilter);
 }
 
 let pickerSearchTimer = null;
@@ -3944,8 +4103,8 @@ function renderRecipesList() {
         ${(r.tags||[]).map(t=>`<span class="rc-tag">${t}</span>`).join('')}
       </div>
       <div class="rc-actions" onclick="event.stopPropagation()">
-        <button class="rc-btn rc-btn-primary" onclick="addRecipeToMealDirect('${r.id}')">＋ Add to meal</button>
-        <button class="rc-btn rc-btn-secondary" onclick="openRecipeView('${r.id}')">View</button>
+        <button class="rc-btn rc-btn-primary" onclick="${r.built ? `openRecipeBuilder('${r.id}')` : `openRecipeView('${r.id}')`}">✎ Edit</button>
+        <button class="rc-btn rc-btn-secondary" onclick="logFood('${r.id}')">Log</button>
         <label class="fli-snack" title="Recommend as a snack" style="margin-left:auto;">
           <input type="checkbox" ${state.preferSnack[r.id] ? 'checked' : ''} onchange="toggleSnackFromList('${r.id}', this.checked)"> snack
         </label>
@@ -4061,6 +4220,7 @@ function calcMealMacros() {
 
 // ── PATCH addFoodToMeal TO USE SMART PORTIONING ───────────────────────────────
 function addFoodToMeal(foodId) {
+  if (foodPickerTarget === 'recipe') { recipeBuildAddFood(foodId); return; }
   const qty = 1; // always start at 1 serving; the user adjusts from there
   const existing = state.currentMeal.find(i => i.foodId === foodId);
   if (existing) {
@@ -6316,7 +6476,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v69 · 2026-07-05';
+const APP_VERSION = 'v70 · 2026-07-06';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

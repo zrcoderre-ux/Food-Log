@@ -941,6 +941,9 @@ body {
 .rec-item .ri-macros { font-size: 11px; color: var(--text3); }
 .rec-item .ri-notsnack { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--text3); text-decoration: underline; }
 .rec-item .ri-notsnack:active { color: var(--warn); }
+.rec-item .ri-snackpref { margin-top: 4px; display: flex; gap: 14px; }
+.rec-item .ri-snackpref span { font-size: 11px; color: var(--text3); text-decoration: underline; }
+.rec-item .ri-snackpref span:active { color: var(--accent); }
 .rec-item .ri-add { font-size: 22px; color: var(--accent); font-weight: 300; }
 .rec-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 24px 12px; line-height: 1.6; }
 
@@ -2740,8 +2743,12 @@ function openMicrosEditor(foodId) {
        <input type="text" id="me-name" value="${escapeHtml(f.name || '')}" placeholder="Food name" style="width:150px;"></div>
      <div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Serving <span style="color:var(--text3);font-weight:400;font-size:11px;">edit the amount or the grams to rescale</span></label>
        <input type="text" id="me-serving" value="${escapeHtml(f.serving || '')}" placeholder="1 serving" style="width:130px;" oninput="scaleServing()" onchange="normalizeServing()"></div>
-     <div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Suggest as a snack <span style="color:var(--text3);font-weight:400;font-size:11px;">uncheck to keep it for meals only</span></label>
-       <input type="checkbox" id="me-snack" ${state.notSnack[foodId] ? '' : 'checked'} style="width:20px;height:20px;"></div>` +
+     <div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Snack suggestions <span style="color:var(--text3);font-weight:400;font-size:11px;">how this food is used in snack recs</span></label>
+       <select id="me-snackpref" style="width:150px;border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+         <option value="auto" ${(!state.notSnack[foodId] && !state.preferSnack[foodId]) ? 'selected' : ''}>Auto</option>
+         <option value="prefer" ${state.preferSnack[foodId] ? 'selected' : ''}>Prefer as snack</option>
+         <option value="no" ${state.notSnack[foodId] ? 'selected' : ''}>Meals only</option>
+       </select></div>` +
     EDIT_MACROS.map(([k, label, unit]) => `
     <div class="settings-row" style="padding:6px 0;">
       <label style="flex:1;">${label} <span style="color:var(--text3);">(${unit})</span></label>
@@ -2784,9 +2791,13 @@ function saveMicros() {
     if (!isNaN(v) && v > 0) micros[nt.key] = Math.round(v * 100) / 100;
   });
   if (Object.keys(micros).length) state.microOverrides[id] = micros; else delete state.microOverrides[id];
-  // Snack-suggestion preference (unchecked = keep it out of snack recs).
-  const snackEl = document.getElementById('me-snack');
-  if (snackEl) { if (snackEl.checked) delete state.notSnack[id]; else state.notSnack[id] = true; }
+  // Snack-suggestion preference: auto / prefer as snack / meals only.
+  const snackEl = document.getElementById('me-snackpref');
+  if (snackEl) {
+    delete state.notSnack[id]; delete state.preferSnack[id];
+    if (snackEl.value === 'no') state.notSnack[id] = true;
+    else if (snackEl.value === 'prefer') state.preferSnack[id] = true;
+  }
   // Apply corrections to already-logged entries of this food.
   const f = getFood(id), fm = foodMicros(f);
   Object.keys(state.diary || {}).forEach(day => {
@@ -4288,6 +4299,7 @@ function ensureDataModel() {
   if (!state.removed) state.removed = {}; // { foodId: true }  foods deleted from the app entirely
   if (!state.deleted) state.deleted = {}; // { 'type:id': timestamp }  deletion tombstones so sync doesn't resurrect removed items
   if (!state.notSnack) state.notSnack = {}; // { foodId: true }  foods to skip in snack recs but keep for meals
+  if (!state.preferSnack) state.preferSnack = {}; // { foodId: true }  foods to rank higher in snack recs
   if (!state.scannedRatedMigration) {
     (state.customFoods || []).forEach(f => {
       if ((f.barcode || f.category === 'Scanned') && !(f.id in state.ratings)) state.ratings[f.id] = 'yes';
@@ -6009,7 +6021,7 @@ function openRecommend() {
   // Split the day's remaining budget across the upcoming meals; snacks get a slice.
   const mealCtx = (fr) => ({ remKcal: base.remKcal * fr, needP: base.needP * fr, needC: base.needC * fr, needF: base.needF * fr, gP: base.gP, gC: base.gC, gF: base.gF, status: base.status });
   const sections = upcoming.map(slot => ({ slot, label: slot, ctx: mealCtx(1 / n) }));
-  sections.push({ slot: 'Snacks', label: 'Snacks', ctx: mealCtx(n ? 0.3 : 1) });
+  sections.push({ slot: 'Snacks', label: 'Snacks', ctx: { ...mealCtx(n ? 0.3 : 1), snack: true } });
 
   const used = new Set();
   let html = '';
@@ -6026,7 +6038,10 @@ function openRecommend() {
         <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
           <div class="ri-why">${recWhy(f, sec.ctx)}</div>
           <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div>
-          ${isSnackSec ? `<div class="ri-notsnack" onclick="event.stopPropagation();markNotSnack('${f.id}')">🚫 not a snack food</div>` : ''}</div>
+          ${isSnackSec ? `<div class="ri-snackpref">
+            <span onclick="event.stopPropagation();markPreferSnack('${f.id}')">${state.preferSnack[f.id] ? '⭐ preferred snack' : '⭐ prefer'}</span>
+            <span onclick="event.stopPropagation();markNotSnack('${f.id}')">🚫 not a snack</span>
+          </div>` : ''}</div>
         <span class="ri-add">＋</span></div>`).join('');
   });
   list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml();
@@ -6038,10 +6053,21 @@ function logFoodTo(id, slot) { logTargetSlot = slot; logFood(id); }
 function markNotSnack(id) {
   ensureDataModel();
   state.notSnack[id] = true;
+  delete state.preferSnack[id];
   saveState();
   const f = getFood(id);
   toast(`${f ? f.name : 'Food'} won’t be suggested as a snack`);
   openRecommend(); // refresh the list without it
+}
+// Mark a food as a preferred snack so it ranks above neutral foods in snack recs.
+function markPreferSnack(id) {
+  ensureDataModel();
+  state.preferSnack[id] = true;
+  delete state.notSnack[id];
+  saveState();
+  const f = getFood(id);
+  toast(`${f ? f.name : 'Food'} preferred for snacks`);
+  openRecommend();
 }
 function editPendingFood() {
   if (pendingLog && pendingLog.kind === 'food' && pendingLog.refId) openMicrosEditor(pendingLog.refId);
@@ -6072,7 +6098,13 @@ function recScore(f, ctx) {
   let score = value / Math.max(f.kcal, 20) * 1000; // value per calorie
   if (ctx.remKcal > 0 && f.kcal > ctx.remKcal) score *= ctx.remKcal / f.kcal; // demote calorie-budget blowers
   score *= (1 + inventoryUrgencyBoost(f)); // nudge foods you own that are near best-by
+  if (ctx.snack && isPreferredSnack(f)) score *= 1.6; // prefer real snack foods over neutral ones
   return score;
+}
+// A food to favor in snack suggestions: explicitly marked "prefer as snack",
+// or a built-in Snack-category food.
+function isPreferredSnack(f) {
+  return !!((state.preferSnack && state.preferSnack[f.id]) || f.category === 'Snack');
 }
 // If this food matches something in your inventory that's near best-by, return
 // a 0..0.5 boost (bigger the sooner it expires) so it ranks higher, all else equal.
@@ -6178,7 +6210,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v61 · 2026-07-05';
+const APP_VERSION = 'v62 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

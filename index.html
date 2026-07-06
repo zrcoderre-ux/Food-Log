@@ -4707,6 +4707,7 @@ function relogSlotMeal(i) {
       kcal: e.kcal, protein: e.protein, carbs: e.carbs, fat: e.fat, micros: e.micros || null
     });
     if (e.kind === 'food' && e.refId) markFoodUsed(e.refId);
+    markSnackIfSnackSlot(e.refId, logTargetSlot);
   });
   saveState();
   syncSlotMeal(key, logTargetSlot);
@@ -5033,6 +5034,13 @@ function renderQtyPreview() {
     mp.style.display = parts.length ? '' : 'none';
   }
 }
+// Logging (or moving) something to the Snacks slot marks it "recommend as a
+// snack" — so it starts showing up in snack suggestions.
+function markSnackIfSnackSlot(refId, slot) {
+  if (slot !== 'Snacks' || !refId) return;
+  ensureDataModel();
+  if (!state.preferSnack[refId]) { state.preferSnack[refId] = true; delete state.notSnack[refId]; }
+}
 function confirmLog() {
   const p = pendingLog; if (!p) return;
   const qty = Math.max(0.25, parseFloat(document.getElementById('qty-input').value) || 1);
@@ -5042,7 +5050,7 @@ function confirmLog() {
     const d = state.diary[p.editKey];
     const e = d && d.entries.find(x => x.id === p.editId);
     const oldSlot = e ? e.slot : null;
-    if (e) { e.qty = qty; e.slot = slot; saveState(); }
+    if (e) { e.qty = qty; e.slot = slot; markSnackIfSnackSlot(e.refId, slot); saveState(); }
     syncSlotMeal(p.editKey, slot);
     if (oldSlot && oldSlot !== slot) syncSlotMeal(p.editKey, oldSlot);
     closeModal('qty-modal');
@@ -5060,6 +5068,7 @@ function confirmLog() {
     micros: p.micros || null
   });
   if (p.kind === 'food') markFoodUsed(p.refId);
+  markSnackIfSnackSlot(p.refId, slot);
   saveState();
   syncSlotMeal(key, slot);
   closeModal('qty-modal'); closeModal('log-food-modal'); closeModal('recommend-modal');
@@ -6476,7 +6485,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v70 · 2026-07-06';
+const APP_VERSION = 'v71 · 2026-07-06';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -1178,12 +1178,12 @@ body {
     <div style="padding:0 16px 10px;">
       <input type="text" class="food-search" id="foods-add-search" placeholder="Search foods to add (USDA + Open Food Facts)…" oninput="searchFoodsToAdd()">
     </div>
-    <div class="foods-list" id="foods-list"></div>
-    <div style="padding:16px;display:flex;flex-direction:column;gap:8px;">
+    <div style="padding:0 16px 12px;display:flex;flex-direction:column;gap:8px;">
       <button class="btn-secondary" onclick="openScanner('willeat')">📷 Scan a barcode to add a food</button>
       <button class="btn-secondary" onclick="openAddFood()">＋ Add custom food</button>
       <button class="btn-secondary" onclick="showView('inventory')">🧺 Inventory &amp; best-by</button>
     </div>
+    <div class="foods-list" id="foods-list"></div>
   </div>
 
   <div id="inventory-view" style="display:none;">
@@ -5925,7 +5925,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v48 · 2026-07-05';
+const APP_VERSION = 'v49 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

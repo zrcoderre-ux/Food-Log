@@ -4050,8 +4050,7 @@ function calcMealMacros() {
 
 // ── PATCH addFoodToMeal TO USE SMART PORTIONING ───────────────────────────────
 function addFoodToMeal(foodId) {
-  const f = getFood(foodId);
-  const qty = f ? smartQty(f.kcal) : 1;
+  const qty = 1; // always start at 1 serving; the user adjusts from there
   const existing = state.currentMeal.find(i => i.foodId === foodId);
   if (existing) {
     existing.qty = Math.min(existing.qty + 0.5, 12);
@@ -6306,7 +6305,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v67 · 2026-07-05';
+const APP_VERSION = 'v68 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -2621,7 +2621,7 @@ function deleteFoodFromList(id) {
 let microsEditId = null, microsEditBase = null, microsEditImage = '';
 // Serving-scaler state: last-seen parsed serving + the current scale ratio, so
 // editing either the count or the weight keeps the two measurements in sync.
-let microsEditServingPrev = { lead: NaN, weight: NaN }, microsEditRatio = 1;
+let microsEditServingPrev = { lead: NaN, weight: NaN }, microsEditRatio = 1, microsEditDriver = null;
 // Live preview + handlers for the food icon (emoji or custom photo) editor.
 function updateIconPreview() {
   const el = document.getElementById('me-icon-preview'); if (!el) return;
@@ -2700,30 +2700,40 @@ function applyServingRatio(r) {
   put('me-fat', b.fat * r, true);
   NUTRIENTS.forEach(nt => { if (b.micros[nt.key] != null) { const el = document.getElementById('mi-' + nt.key); if (el) el.value = Math.round(b.micros[nt.key] * r * 100) / 100; } });
 }
+// Replace only the weight/volume number in a serving string, keeping the count.
+function setServingWeight(s, newWeight) {
+  return String(s == null ? '' : s).replace(/(\d+(?:\.\d+)?)(\s*)(grams?|kg|milliliters?|ml|ounces?|oz|liters?|g\b|l\b)/i,
+    (mm, num, sp, unit) => fmtServingNum(newWeight) + sp + unit);
+}
 // Live (per-keystroke): figure out which measurement the user changed by
-// diffing against the last-seen values, then scale macros/micros by the new
-// ratio relative to baseline. The two measurements are re-synced on blur.
+// diffing against the last-seen values, then scale macros/micros. The weight is
+// always the TOTAL amount of food, so macros track it either way. Re-synced on
+// blur (editing the count updates the total grams; editing grams does not).
 function scaleServing() {
   const b = microsEditBase; if (!b) return;
   const s = document.getElementById('me-serving').value;
   const curW = parseServingWeight(s), curL = parseServingLead(s);
   const prev = microsEditServingPrev;
   const changed = (a, c) => (isNaN(a) && isNaN(c)) ? false : (isNaN(a) || isNaN(c) || Math.abs(a - c) > 1e-9);
-  let r = null;
-  if (b.lead > 0 && curL > 0 && changed(curL, prev.lead)) r = curL / b.lead;          // count edited
-  else if (b.weight > 0 && curW > 0 && changed(curW, prev.weight)) r = curW / b.weight; // weight edited
+  let r = null, driver = null;
+  // Count edited → total weight scales with it (macros ∝ count).
+  if (b.lead > 0 && curL > 0 && changed(curL, prev.lead)) { r = curL / b.lead; driver = 'lead'; }
+  // Weight edited → redefines the total grams (macros ∝ grams); count unchanged.
+  else if (b.weight > 0 && curW > 0 && changed(curW, prev.weight)) { r = curW / b.weight; driver = 'weight'; }
   microsEditServingPrev = { lead: curL, weight: curW };
-  if (r != null && r > 0) applyServingRatio(r);
+  if (r != null && r > 0) { microsEditDriver = driver; applyServingRatio(r); }
 }
-// On blur: rewrite the serving text so the count and weight agree with the
-// current ratio (e.g. "1 sandwich (160 g)" → "2 sandwich (320 g)").
+// On blur: if the COUNT was changed, update the total grams to match (grams =
+// baseline weight × count ratio). Editing the grams directly is left alone —
+// that's the user redefining the serving's weight, not its count.
 function normalizeServing() {
   const b = microsEditBase; if (!b) return;
   const el = document.getElementById('me-serving'); if (!el) return;
-  if (!(b.weight > 0) || !(b.lead > 0) || !(microsEditRatio > 0)) return;
-  const next = scaleServingString(el.value, microsEditRatio, b);
-  if (next !== el.value) el.value = next;
-  microsEditServingPrev = { lead: parseServingLead(next), weight: parseServingWeight(next) };
+  if (microsEditDriver === 'lead' && b.weight > 0 && b.lead > 0 && microsEditRatio > 0) {
+    const next = setServingWeight(el.value, Math.round(b.weight * microsEditRatio));
+    if (next !== el.value) el.value = next;
+    microsEditServingPrev = { lead: parseServingLead(next), weight: parseServingWeight(next) };
+  }
 }
 // Ingredient list + allergen/diet badges for the food detail screen (read-only).
 function titleCaseWords(s) { return String(s || '').replace(/\b\w/g, c => c.toUpperCase()); }
@@ -2749,6 +2759,7 @@ function openMicrosEditor(foodId) {
   microsEditBase = { lead: parseServingLead(f.serving) || 1, weight: parseServingWeight(f.serving), kcal: +f.kcal || 0, protein: +f.protein || 0, carbs: +f.carbs || 0, fat: +f.fat || 0, micros: cur };
   microsEditServingPrev = { lead: parseServingLead(f.serving), weight: parseServingWeight(f.serving) };
   microsEditRatio = 1;
+  microsEditDriver = null;
   microsEditImage = f.image || '';
   document.getElementById('micros-title').textContent = f.name;
   document.getElementById('macro-fields').innerHTML =
@@ -6305,7 +6316,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v68 · 2026-07-05';
+const APP_VERSION = 'v69 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

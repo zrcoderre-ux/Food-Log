@@ -387,6 +387,8 @@ body {
   padding: 20px 20px 36px;
   width: 100%;
   max-width: 430px;
+  max-height: 92vh;
+  overflow-y: auto;
   animation: slideUp 0.22s ease;
 }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -1598,6 +1600,11 @@ body {
         <option>Snack</option><option>Other</option>
       </select>
     </div>
+    <div class="form-group">
+      <label>Best-by / expiration date <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
+      <input type="date" id="cf-bestby" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+      <div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4;">Set a date to also track this in your inventory and get low/expiring alerts.</div>
+    </div>
     <button class="btn-primary" onclick="saveCustomFood()">Add food</button>
     <button class="btn-secondary" onclick="closeModal('add-food-modal')">Cancel</button>
   </div>
@@ -1818,7 +1825,7 @@ body {
     <div id="me-ingredients"></div>
     <div class="settings-label" style="margin-top:12px;">Vitamins &amp; minerals (optional)</div>
     <p style="font-size:11px;color:var(--text3);margin:-2px 0 6px;line-height:1.45;">Enter an amount (mg/mcg) <b>or</b> a % from the label — type e.g. <b>20%</b> and it converts to the amount for you.</p>
-    <div id="micros-fields" style="max-height:38vh;overflow-y:auto;"></div>
+    <div id="micros-fields"></div>
     <button class="btn-primary" style="margin-top:12px;" onclick="saveMicros()">Save</button>
     <button class="btn-secondary" onclick="closeModal('micros-modal')">Cancel</button>
   </div>
@@ -2694,7 +2701,7 @@ function ingredientInfoHtml(f) {
   else if (diet.includes('vegetarian')) chips.push(chip('🥬 Vegetarian', '--accent'));
   (f.allergens || []).slice(0, 12).forEach(a => chips.push(chip('⚠️ ' + titleCaseWords(a), '--warn')));
   const ingTxt = f.ingredients
-    ? `<div style="font-size:11px;color:var(--text2);line-height:1.55;margin-top:${chips.length ? '6px' : '0'};"><b style="color:var(--text3);font-weight:600;">Ingredients: </b>${escapeHtml(f.ingredients)}</div>`
+    ? `<div style="font-size:11px;color:var(--text2);line-height:1.55;margin-top:${chips.length ? '6px' : '0'};max-height:78px;overflow-y:auto;"><b style="color:var(--text3);font-weight:600;">Ingredients: </b>${escapeHtml(f.ingredients)}</div>`
     : '';
   if (!chips.length && !ingTxt) return '';
   return `<div class="settings-label" style="margin-top:12px;">Ingredients &amp; badges</div>
@@ -2804,7 +2811,7 @@ function onAddFoodPhoto(event) {
   event.target.value = '';
 }
 function openAddFood() {
-  ['cf-name','cf-emoji','cf-serving','cf-kcal','cf-protein','cf-carbs','cf-fat'].forEach(id => document.getElementById(id).value = '');
+  ['cf-name','cf-emoji','cf-serving','cf-kcal','cf-protein','cf-carbs','cf-fat','cf-bestby'].forEach(id => document.getElementById(id).value = '');
   addFoodImage = '';
   updateAddFoodIcon();
   document.getElementById('add-food-modal').classList.add('open');
@@ -2831,12 +2838,19 @@ function saveCustomFood() {
   // Deliberately added → Will-Eat, and marked used so it sorts to the top.
   state.ratings[food.id] = 'yes';
   markFoodUsed(food.id);
+  // If a best-by date was given, also track it in inventory for low/expiring alerts.
+  const bestBy = document.getElementById('cf-bestby').value || '';
+  if (bestBy) {
+    ensureDataModel();
+    state.inventory.push({ id: 'inv_' + Date.now() + Math.round(Math.random() * 999), name, qty: 1, unit: '', bestBy, low: 0 });
+  }
   saveState();
   closeModal('add-food-modal');
-  toast(`${food.emoji} ${food.name} added to your foods!`);
+  toast(bestBy ? `${food.emoji} ${food.name} added — tracking best-by date` : `${food.emoji} ${food.name} added to your foods!`);
   addFoodImage = '';
   renderSwipeCard();
   updateRatedBar();
+  if (bestBy) renderInventory();
 }
 
 // ════════════════════════════════════════ BUILDER ═════════════════════════════
@@ -6101,7 +6115,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v56 · 2026-07-05';
+const APP_VERSION = 'v57 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -3041,6 +3041,9 @@ function renderSavedMeals() {
       <div class="smc-actions">
         <button class="smc-use" onclick="loadMeal(${i})">Edit</button>
         <button class="smc-del" onclick="deleteMeal(${i})">Delete</button>
+        <label class="fli-snack" title="Recommend as a snack" style="margin-left:auto;">
+          <input type="checkbox" ${state.preferSnack[meal.id] ? 'checked' : ''} onchange="toggleSnackFromList('${meal.id}', this.checked)"> snack
+        </label>
       </div>
     </div>
   `).join('');
@@ -3923,6 +3926,9 @@ function renderRecipesList() {
       <div class="rc-actions" onclick="event.stopPropagation()">
         <button class="rc-btn rc-btn-primary" onclick="addRecipeToMealDirect('${r.id}')">＋ Add to meal</button>
         <button class="rc-btn rc-btn-secondary" onclick="openRecipeView('${r.id}')">View</button>
+        <label class="fli-snack" title="Recommend as a snack" style="margin-left:auto;">
+          <input type="checkbox" ${state.preferSnack[r.id] ? 'checked' : ''} onchange="toggleSnackFromList('${r.id}', this.checked)"> snack
+        </label>
       </div>
     </div>`;
   }).join('');
@@ -6038,24 +6044,40 @@ function openRecommend() {
   let html = '';
   sections.forEach(sec => {
     const isSnackSec = sec.slot === 'Snacks';
-    const picks = pool.filter(f => !used.has(f.id) && (!isSnackSec || isSnackFood(f))) // snacks: only foods marked as snacks
-      .map(f => ({ f, score: recScore(f, sec.ctx) }))
+    // Candidates: foods (marked as snacks for the snack section), plus saved
+    // meals & recipes explicitly marked as snacks.
+    let cands = pool.filter(f => !isSnackSec || isSnackFood(f)).map(f => ({ f, kind: 'food' }));
+    if (isSnackSec) {
+      (state.savedMeals || []).forEach(m => { if (state.preferSnack[m.id]) cands.push({ f: mealCandidate(m), kind: 'meal' }); });
+      (state.recipes || []).forEach(r => { if (state.preferSnack[r.id]) cands.push({ f: recipeCandidate(r), kind: 'recipe' }); });
+    }
+    const picks = cands.filter(c => !used.has(c.f.id))
+      .map(c => ({ ...c, score: recScore(c.f, sec.ctx) }))
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score).slice(0, 4);
     if (!picks.length) return;
     picks.forEach(p => used.add(p.f.id));
-    html += `<div class="rec-nutri-head">${sec.label}</div>` + picks.map(({ f }) => `<div class="rec-item" onclick="logFoodTo('${f.id}','${sec.slot}')">
-        <span class="ri-emoji">${foodIcon(f, 28)}</span>
+    html += `<div class="rec-nutri-head">${sec.label}</div>` + picks.map(({ f, kind }) => {
+      const logCall = kind === 'meal' ? `logMealTo('${f.id}','${sec.slot}')` : kind === 'recipe' ? `logRecipeTo('${f.id}','${sec.slot}')` : `logFoodTo('${f.id}','${sec.slot}')`;
+      const icon = kind === 'food' ? foodIcon(f, 28) : f.emoji;
+      return `<div class="rec-item" onclick="${logCall}">
+        <span class="ri-emoji">${icon}</span>
         <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
           <div class="ri-why">${recWhy(f, sec.ctx)}</div>
           <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div>
           ${isSnackSec ? `<div class="ri-notsnack" onclick="event.stopPropagation();markNotSnack('${f.id}')">🚫 not a snack</div>` : ''}</div>
-        <span class="ri-add">＋</span></div>`).join('');
+        <span class="ri-add">＋</span></div>`;
+    }).join('');
   });
   list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml();
   openModalById('recommend-modal');
 }
 function logFoodTo(id, slot) { logTargetSlot = slot; logFood(id); }
+function logMealTo(id, slot) { logTargetSlot = slot; const i = state.savedMeals.findIndex(m => m.id === id); if (i >= 0) logMeal(i); }
+function logRecipeTo(id, slot) { logTargetSlot = slot; logRecipe(id); }
+// A saved meal / recipe reshaped so recScore + the rec card can use it like a food.
+function mealCandidate(m) { return { id: m.id, name: m.name, emoji: '🍽️', serving: m.items ? (m.items.length + ' foods') : '1 meal', kcal: m.kcal || 0, protein: m.protein || 0, carbs: m.carbs || 0, fat: m.fat || 0 }; }
+function recipeCandidate(r) { return { id: r.id, name: r.name, emoji: '📖', serving: '1 serving', kcal: r.kcal || 0, protein: r.protein || 0, carbs: r.carbs || 0, fat: r.fat || 0 }; }
 // Mark a food so it stops being suggested as a snack — but it still shows up
 // for Breakfast/Lunch/Dinner. Reversible from the food editor.
 function markNotSnack(id) {
@@ -6211,7 +6233,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v63 · 2026-07-05';
+const APP_VERSION = 'v64 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

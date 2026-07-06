@@ -2551,6 +2551,9 @@ function deleteFoodFromList(id) {
   toast('Removed');
 }
 let microsEditId = null, microsEditBase = null, microsEditImage = '';
+// Serving-scaler state: last-seen parsed serving + the current scale ratio, so
+// editing either the count or the weight keeps the two measurements in sync.
+let microsEditServingPrev = { lead: NaN, weight: NaN }, microsEditRatio = 1;
 // Live preview + handlers for the food icon (emoji or custom photo) editor.
 function updateIconPreview() {
   const el = document.getElementById('me-icon-preview'); if (!el) return;
@@ -2589,24 +2592,39 @@ function onPhotoPick(event) {
   event.target.value = '';
 }
 const EDIT_MACROS = [ ['kcal', 'Calories', 'cal'], ['protein', 'Protein', 'g'], ['carbs', 'Carbs', 'g'], ['fat', 'Fat', 'g'] ];
-function parseServingLead(s) { const m = String(s == null ? '' : s).match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : NaN; }
+// Leading count/volume of a serving. Handles mixed and simple fractions
+// ("1 1/2", "1/2") as well as decimals/integers.
+function parseServingLead(s) {
+  s = String(s == null ? '' : s);
+  let m = s.match(/(\d+)\s+(\d+)\/(\d+)/); if (m) return parseInt(m[1], 10) + parseInt(m[2], 10) / parseInt(m[3], 10);
+  m = s.match(/(\d+)\/(\d+)/); if (m) return parseInt(m[1], 10) / parseInt(m[2], 10);
+  m = s.match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : NaN;
+}
 // A weight/volume amount in the serving (e.g. the 160 in "1 sandwich (160 g)"),
 // so scaling can key off grams/ml/oz when the food is listed two ways.
 function parseServingWeight(s) {
   const m = String(s == null ? '' : s).match(/(\d+(?:\.\d+)?)\s*(grams?|kg|milliliters?|ml|ounces?|oz|liters?|g\b|l\b)/i);
   return m ? parseFloat(m[1]) : NaN;
 }
-function scaleServing() {
-  const b = microsEditBase; if (!b) return;
-  const s = document.getElementById('me-serving').value;
-  const curW = parseServingWeight(s), curL = parseServingLead(s);
-  // Scale by the weight/volume amount if the serving has one (so editing the
-  // grams works), otherwise by the leading count. Always relative to baseline.
-  let r;
-  if (b.weight && curW > 0) r = curW / b.weight;
-  else if (b.lead && curL > 0) r = curL / b.lead;
-  else return;
-  if (!(r > 0)) return;
+function fmtServingNum(v) { return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100); }
+// Rewrite a serving string so both its count and its weight reflect the same
+// ratio r relative to the baseline (b.lead / b.weight). Keeps the surrounding
+// unit words intact.
+function scaleServingString(s, r, b) {
+  let out = String(s == null ? '' : s);
+  if (b.weight > 0) {
+    out = out.replace(/(\d+(?:\.\d+)?)(\s*)(grams?|kg|milliliters?|ml|ounces?|oz|liters?|g\b|l\b)/i,
+      (mm, num, sp, unit) => fmtServingNum(Math.round(b.weight * r)) + sp + unit);
+  }
+  if (b.lead > 0) {
+    out = out.replace(/^(\s*)(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?)/,
+      (mm, sp, tok) => sp + fmtServingNum(Math.round(b.lead * r * 100) / 100));
+  }
+  return out;
+}
+function applyServingRatio(r) {
+  const b = microsEditBase; if (!b || !(r > 0)) return;
+  microsEditRatio = r;
   const put = (id, v, dec) => { const el = document.getElementById(id); if (el) el.value = dec ? Math.round(v * 10) / 10 : Math.round(v); };
   put('me-kcal', b.kcal * r, false);
   put('me-protein', b.protein * r, true);
@@ -2614,12 +2632,39 @@ function scaleServing() {
   put('me-fat', b.fat * r, true);
   NUTRIENTS.forEach(nt => { if (b.micros[nt.key] != null) { const el = document.getElementById('mi-' + nt.key); if (el) el.value = Math.round(b.micros[nt.key] * r * 100) / 100; } });
 }
+// Live (per-keystroke): figure out which measurement the user changed by
+// diffing against the last-seen values, then scale macros/micros by the new
+// ratio relative to baseline. The two measurements are re-synced on blur.
+function scaleServing() {
+  const b = microsEditBase; if (!b) return;
+  const s = document.getElementById('me-serving').value;
+  const curW = parseServingWeight(s), curL = parseServingLead(s);
+  const prev = microsEditServingPrev;
+  const changed = (a, c) => (isNaN(a) && isNaN(c)) ? false : (isNaN(a) || isNaN(c) || Math.abs(a - c) > 1e-9);
+  let r = null;
+  if (b.lead > 0 && curL > 0 && changed(curL, prev.lead)) r = curL / b.lead;          // count edited
+  else if (b.weight > 0 && curW > 0 && changed(curW, prev.weight)) r = curW / b.weight; // weight edited
+  microsEditServingPrev = { lead: curL, weight: curW };
+  if (r != null && r > 0) applyServingRatio(r);
+}
+// On blur: rewrite the serving text so the count and weight agree with the
+// current ratio (e.g. "1 sandwich (160 g)" → "2 sandwich (320 g)").
+function normalizeServing() {
+  const b = microsEditBase; if (!b) return;
+  const el = document.getElementById('me-serving'); if (!el) return;
+  if (!(b.weight > 0) || !(b.lead > 0) || !(microsEditRatio > 0)) return;
+  const next = scaleServingString(el.value, microsEditRatio, b);
+  if (next !== el.value) el.value = next;
+  microsEditServingPrev = { lead: parseServingLead(next), weight: parseServingWeight(next) };
+}
 function openMicrosEditor(foodId) {
   ensureDataModel();
   const f = getFood(foodId); if (!f) return;
   microsEditId = foodId;
   const cur = foodMicros(f) || {};
   microsEditBase = { lead: parseServingLead(f.serving) || 1, weight: parseServingWeight(f.serving), kcal: +f.kcal || 0, protein: +f.protein || 0, carbs: +f.carbs || 0, fat: +f.fat || 0, micros: cur };
+  microsEditServingPrev = { lead: parseServingLead(f.serving), weight: parseServingWeight(f.serving) };
+  microsEditRatio = 1;
   microsEditImage = f.image || '';
   document.getElementById('micros-title').textContent = f.name;
   document.getElementById('macro-fields').innerHTML =
@@ -2634,7 +2679,7 @@ function openMicrosEditor(foodId) {
      <div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Name</label>
        <input type="text" id="me-name" value="${escapeHtml(f.name || '')}" placeholder="Food name" style="width:150px;"></div>
      <div class="settings-row" style="padding:6px 0;"><label style="flex:1;">Serving <span style="color:var(--text3);font-weight:400;font-size:11px;">edit the amount or the grams to rescale</span></label>
-       <input type="text" id="me-serving" value="${escapeHtml(f.serving || '')}" placeholder="1 serving" style="width:130px;" oninput="scaleServing()"></div>` +
+       <input type="text" id="me-serving" value="${escapeHtml(f.serving || '')}" placeholder="1 serving" style="width:130px;" oninput="scaleServing()" onchange="normalizeServing()"></div>` +
     EDIT_MACROS.map(([k, label, unit]) => `
     <div class="settings-row" style="padding:6px 0;">
       <label style="flex:1;">${label} <span style="color:var(--text3);">(${unit})</span></label>
@@ -5944,7 +5989,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v50 · 2026-07-05';
+const APP_VERSION = 'v51 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

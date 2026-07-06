@@ -2247,9 +2247,17 @@ function renderSwipeCard() {
   const hint = document.querySelector('.swipe-hint');
 
   if (unratedQueue.length === 0) {
+    // Nothing left to rate: never show the "all foods rated" screen. If the
+    // swipe view is what's on screen, bounce straight to the food list. (When
+    // this runs off-screen — e.g. a stats refresh — just leave the done-state
+    // hidden without hijacking whatever view the user is on.)
+    const foodsActive = document.getElementById('screen-foods').classList.contains('active');
+    const sv = document.getElementById('swipe-view');
+    const swipeVisible = sv && sv.style.display !== 'none';
+    if (foodsActive && swipeVisible) { showView('list'); return; }
     card.style.display = 'none';
     document.getElementById('card-ghost').style.display = 'none';
-    doneState.style.display = 'block';
+    doneState.style.display = 'none';
     swipeActions.style.display = 'none';
     hint.style.display = 'none';
     return;
@@ -5998,7 +6006,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v52 · 2026-07-05';
+const APP_VERSION = 'v53 · 2026-07-05';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

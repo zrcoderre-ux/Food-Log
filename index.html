@@ -1835,8 +1835,8 @@ body {
     </div>
     <div id="log-search-pane">
       <input type="text" class="food-search" id="log-search-input" placeholder="Search foods, or scan a barcode…" oninput="renderLogSearch()">
-      <div id="log-recent" style="flex-shrink:0;"></div>
       <button class="btn-secondary" style="margin:8px 0 4px;" onclick="openScanner()">📷 Scan a barcode</button>
+      <div id="log-recent" style="flex-shrink:0;"></div>
       <div class="food-pick-list" id="log-search-list"></div>
     </div>
     <div id="log-meals-pane" style="display:none;">
@@ -4685,7 +4685,7 @@ function relDay(dateKey) {
 }
 function renderRecentSlotMeals(slot) {
   const el = document.getElementById('log-recent'); if (!el) return;
-  _recentSlotMeals = recentSlotMeals(slot, 2);
+  _recentSlotMeals = recentSlotMeals(slot, 4);
   if (!_recentSlotMeals.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'block';
   el.innerHTML = `<div class="log-recent-head">Recent ${escapeHtml(slot.toLowerCase())} — tap to log again</div>` +
@@ -6485,7 +6485,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v73 · 2026-07-06';
+const APP_VERSION = 'v74 · 2026-07-07';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

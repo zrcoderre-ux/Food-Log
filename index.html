@@ -6297,6 +6297,53 @@ function nutrientStatus(endDate) {
 }
 function hasMicroData(status) { return status.some(s => s.have > 0); }
 function nutrientColor(pct) { return pct >= 1 ? 'var(--accent)' : pct >= 0.5 ? 'var(--fat)' : 'var(--warn)'; }
+// Look back over recently LOGGED days to find nutrients you habitually fall
+// short on — the ones you're "unlikely to hit left to your own devices," beyond
+// whatever today's total happens to be. For each nutrient we average the daily
+// intake as a fraction of its Daily Value across days you actually logged food,
+// then flag those averaging under ~75%. Today is excluded (still in progress),
+// limit nutrients (sodium) are skipped, and we need a few days of history first.
+function chronicNutrientGaps(days) {
+  days = days || 21;
+  const today = new Date();
+  const acc = {}; NUTRIENTS.forEach(nt => acc[nt.key] = 0);
+  let tracked = 0;
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const day = state.diary[dkey(d)];
+    if (!day || !day.entries || !day.entries.length) continue;
+    const dayTot = {}; let anyMicro = false;
+    day.entries.forEach(e => {
+      if (!e.micros) return;
+      Object.keys(e.micros).forEach(k => { if (e.micros[k] != null) { dayTot[k] = (dayTot[k] || 0) + e.micros[k] * (e.qty || 1); anyMicro = true; } });
+    });
+    if (!anyMicro) continue;
+    tracked++;
+    NUTRIENTS.forEach(nt => { acc[nt.key] += (dayTot[nt.key] || 0) / (nt.dv || 1); });
+  }
+  if (tracked < 4) return []; // not enough logged history to trust the pattern
+  // Keep nutrients you get SOME of but habitually too little (avg 3–75% of DV).
+  // The >3% floor drops nutrients that are simply never present in your logged
+  // foods — usually missing label data, not a real, actionable dietary gap.
+  return NUTRIENTS.filter(nt => !nt.limit)
+    .map(nt => ({ nt, avg: acc[nt.key] / tracked, days: tracked }))
+    .filter(x => x.avg > 0.03 && x.avg < 0.75)
+    .sort((a, b) => a.avg - b.avg);
+}
+// The habitual-gaps card: which nutrients you routinely miss, with tap-to-search
+// food sources. Complements the "running low today" card with a longer horizon.
+function habitualGapsHtml() {
+  const gaps = chronicNutrientGaps().slice(0, 4);
+  if (!gaps.length) return '';
+  return '<div class="rec-nutri-head">You often run low on <span>· recent weeks</span></div>' + gaps.map(g => {
+    const src = (NUTRIENT_SOURCES[g.nt.key] || []).slice(0, 4);
+    const chips = src.map(name => `<span class="nutri-chip" onclick="suggestSearch('${name.replace(/'/g, "\\'")}')">${escapeHtml(name)}</span>`).join('');
+    return `<div class="rec-nutri">
+      <div class="rn-top"><span class="rn-name">${g.nt.label}</span><span class="rn-pct" style="color:${nutrientColor(g.avg)};">averaging ${Math.round(g.avg * 100)}% of daily target</span></div>
+      <div class="nutri-chips">${chips}</div>
+    </div>`;
+  }).join('');
+}
 function fmtAmt(v, unit) { return (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10) + ' ' + unit; }
 
 function renderNutrients() {
@@ -6344,11 +6391,11 @@ function openRecommend() {
     : `Protein’s covered — these help round out your vitamins & minerals.`;
 
   if (needPnow <= 3) {
-    list.innerHTML = '<div class="rec-empty">🎉 You’ve hit your protein target for the day. Nice work!</div>' + micronutrientRecsHtml();
+    list.innerHTML = '<div class="rec-empty">🎉 You’ve hit your protein target for the day. Nice work!</div>' + micronutrientRecsHtml() + habitualGapsHtml();
     openModalById('recommend-modal'); return;
   }
   const needP = Math.max(0, remP), needC = Math.max(0, remC), needF = Math.max(0, remF);
-  const base = { remKcal, needP, needC, needF, gP: t.protein || 1, gC: t.carbs || 1, gF: t.fat || 1, status: nutrientStatus(new Date()) };
+  const base = { remKcal, needP, needC, needF, gP: t.protein || 1, gC: t.carbs || 1, gF: t.fat || 1, status: nutrientStatus(new Date()), chronic: chronicNutrientGaps() };
   let pool = acceptedFoods();
   // Fall back to the wider library when few foods are rated — but never surface
   // anything on the "won't eat" list (rated 'no').
@@ -6363,7 +6410,7 @@ function openRecommend() {
   const upcoming = ['Breakfast', 'Lunch', 'Dinner'].filter(s => !logged.has(s) && (!isToday || hour < cutoff[s]));
   const n = upcoming.length;
   // Split the day's remaining budget across the upcoming meals; snacks get a slice.
-  const mealCtx = (fr) => ({ remKcal: base.remKcal * fr, needP: base.needP * fr, needC: base.needC * fr, needF: base.needF * fr, gP: base.gP, gC: base.gC, gF: base.gF, status: base.status });
+  const mealCtx = (fr) => ({ remKcal: base.remKcal * fr, needP: base.needP * fr, needC: base.needC * fr, needF: base.needF * fr, gP: base.gP, gC: base.gC, gF: base.gF, status: base.status, chronic: base.chronic });
   const sections = upcoming.map(slot => ({ slot, label: slot, ctx: mealCtx(1 / n) }));
   sections.push({ slot: 'Snacks', label: 'Snacks', ctx: { ...mealCtx(n ? 0.3 : 1), snack: true } });
 
@@ -6396,7 +6443,7 @@ function openRecommend() {
         <span class="ri-add">＋</span></div>`;
     }).join('');
   });
-  list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml();
+  list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml() + habitualGapsHtml();
   openModalById('recommend-modal');
 }
 function logFoodTo(id, slot) { logTargetSlot = slot; logFood(id); }
@@ -6438,7 +6485,14 @@ function recScore(f, ctx) {
       microVal += (1 - s.pct) * Math.min(fm[s.nt.key], gap) / (s.need || 1);
     }
   });
-  const value = macroVal + 0.5 * microVal;
+  // Habitual-gap bonus: reward foods rich in nutrients you CHRONICALLY under-eat
+  // (from your history), not just what's short today. This steers you toward the
+  // nutrients you're unlikely to hit left to your own devices.
+  let chronicVal = 0;
+  if (fm && ctx.chronic) ctx.chronic.forEach(c => {
+    if (fm[c.nt.key]) chronicVal += Math.max(0, 1 - c.avg) * Math.min(fm[c.nt.key], c.nt.dv) / (c.nt.dv || 1);
+  });
+  const value = macroVal + 0.5 * microVal + 0.6 * chronicVal;
   if (value <= 0) return 0;
   let score = value / Math.max(f.kcal, 20) * 1000; // value per calorie → lean, nutrient-dense picks win
   score *= (1 + inventoryUrgencyBoost(f)); // nudge foods you own that are near best-by
@@ -6519,11 +6573,18 @@ function recWhy(f, ctx) {
       if (s.pct < 0.85 && fm[s.nt.key]) { const w = (1 - s.pct) * Math.min(fm[s.nt.key], Math.max(0, s.need - s.have)); if (w > best) { best = w; microName = s.nt.label; } }
     });
   }
+  // A nutrient you HABITUALLY under-eat that this food is rich in.
+  let habitName = '';
+  if (fm && ctx.chronic) {
+    let best = 0;
+    ctx.chronic.forEach(c => { if (fm[c.nt.key]) { const w = Math.max(0, 1 - c.avg) * Math.min(fm[c.nt.key], c.nt.dv) / (c.nt.dv || 1); if (w > best) { best = w; habitName = c.nt.label; } } });
+  }
   const parts = [];
   if (inventoryUrgencyBoost(f) > 0) parts.push('🧺 use soon (near best-by)');
   if (proteinFills) parts.push(`${f.protein}g protein`);
   if (proteinFills && perCal >= 0.12) parts.push('lean protein');
   if (microName) parts.push('good source of ' + microName);
+  if (habitName && habitName !== microName) parts.push('helps your usual ' + habitName + ' gap');
   return parts.length ? parts.join(' · ') : 'Helps round out your nutrients';
 }
 
@@ -6569,7 +6630,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v77 · 2026-07-11';
+const APP_VERSION = 'v78 · 2026-07-11';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

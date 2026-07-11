@@ -2929,10 +2929,23 @@ function openMicrosEditor(foodId) {
   document.getElementById('me-ingredients').innerHTML = ingredientInfoHtml(f);
   document.getElementById('micros-fields').innerHTML = NUTRIENTS.map(nt => `
     <div class="settings-row" style="padding:6px 0;">
-      <label style="flex:1;">${nt.label} <span style="color:var(--text3);">(${nt.unit} or %)</span></label>
-      <input type="text" inputmode="decimal" id="mi-${nt.key}" value="${cur[nt.key] != null ? cur[nt.key] : ''}" placeholder="— or %" style="width:90px;">
+      <label style="flex:1;">${nt.label}</label>
+      <input type="text" inputmode="decimal" id="mi-${nt.key}" value="${cur[nt.key] != null ? cur[nt.key] : ''}" placeholder="0" style="width:74px;">
+      <button type="button" id="mu-${nt.key}" data-mode="amt" onclick="toggleMicroUnit('${nt.key}')" title="Tap to switch between ${nt.unit} and % of Daily Value" style="width:46px;margin-left:6px;padding:6px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:12px;flex-shrink:0;">${nt.unit}</button>
     </div>`).join('');
   openModalById('micros-modal');
+}
+// Flip a micronutrient field between its amount unit (mg/mcg/g) and "% of Daily
+// Value", so a value from a label that only lists percentages can be entered
+// without needing a "%" key on the keypad. saveMicros() reads the chosen mode.
+function toggleMicroUnit(key) {
+  const btn = document.getElementById('mu-' + key); if (!btn) return;
+  const nt = NUTRIENTS.find(n => n.key === key); if (!nt) return;
+  const mode = btn.dataset.mode === 'pct' ? 'amt' : 'pct';
+  btn.dataset.mode = mode;
+  btn.textContent = mode === 'pct' ? '%' : nt.unit;
+  const inp = document.getElementById('mi-' + key);
+  if (inp) inp.placeholder = mode === 'pct' ? '% DV' : '0';
 }
 function saveMicros() {
   if (!microsEditId) return;
@@ -2957,8 +2970,11 @@ function saveMicros() {
     const raw = (document.getElementById('mi-' + nt.key).value || '').trim();
     if (!raw) return;
     let v;
+    const btn = document.getElementById('mu-' + nt.key);
+    const pctMode = btn && btn.dataset.mode === 'pct';
     const pm = raw.match(/^([\d.]+)\s*%$/);
-    if (pm) v = nt.dv * parseFloat(pm[1]) / 100;
+    if (pm) v = nt.dv * parseFloat(pm[1]) / 100;          // explicit "20%" typed
+    else if (pctMode) v = nt.dv * parseFloat(raw) / 100;  // unit toggle set to %
     else v = parseFloat(raw);
     if (!isNaN(v) && v > 0) micros[nt.key] = Math.round(v * 100) / 100;
   });
@@ -6617,7 +6633,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v80 · 2026-07-11';
+const APP_VERSION = 'v81 · 2026-07-11';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

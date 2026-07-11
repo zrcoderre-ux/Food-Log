@@ -2167,6 +2167,7 @@ const FOOD_LIBRARY = [
   {id:'c52',emoji:'🥪',name:'Club sandwich',category:'Prepared',tags:['Stacked','Hearty'],serving:'1 sandwich',kcal:590,protein:34,carbs:44,fat:29},
   {id:'c53',emoji:'🥦',name:'Beef & broccoli',category:'Prepared',tags:['Takeout','Savory'],serving:'1 cup',kcal:320,protein:24,carbs:16,fat:18},
   {id:'c54',emoji:'🥖',name:'Meatball sub',category:'Prepared',tags:['Hearty','Italian-American'],serving:'1 (6-inch)',kcal:580,protein:28,carbs:58,fat:26},
+  {id:'c55',emoji:'🦞',name:'Lobster roll (Luke’s)',category:'Prepared',tags:['Seafood','Lean protein'],serving:'1 sandwich',kcal:380,protein:26,carbs:25,fat:10,micros:{sodium:930,potassium:304,calcium:234,iron:1.8,fiber:1}},
 
   // ── SNACKS ───────────────────────────────────────────────────────────────────
   {id:'s1',emoji:'🍫',name:'Dark chocolate (70%+)',category:'Snack',tags:['Antioxidants','Indulgent'],serving:'1 oz',kcal:170,protein:2,carbs:13,fat:12},
@@ -6616,7 +6617,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v79 · 2026-07-11';
+const APP_VERSION = 'v80 · 2026-07-11';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

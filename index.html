@@ -6336,10 +6336,15 @@ function openRecommend() {
   const remP = t.protein - tot.protein, remC = t.carbs - tot.carbs, remF = t.fat - tot.fat;
   const sub = document.getElementById('recommend-sub');
   const list = document.getElementById('recommend-list');
-  sub.innerHTML = `About <b>${Math.max(0, Math.round(remKcal))} cal</b> left today — still need roughly <b>${Math.max(0, remP)}g</b> protein, <b>${Math.max(0, remC)}g</b> carbs, <b>${Math.max(0, remF)}g</b> fat.`;
+  const needPnow = Math.max(0, remP);
+  // Carbs, fat and calories are intentionally left out of recommendations — the
+  // only macro goal we steer toward is protein (plus tracked micronutrients).
+  sub.innerHTML = needPnow > 3
+    ? `Still about <b>${needPnow}g protein</b> to go today — here are picks that get you there.`
+    : `Protein’s covered — these help round out your vitamins & minerals.`;
 
-  if (remKcal <= 40 && remP <= 3 && remC <= 5 && remF <= 2) {
-    list.innerHTML = '<div class="rec-empty">🎉 You’ve essentially hit your targets for the day. Nice work!</div>';
+  if (needPnow <= 3) {
+    list.innerHTML = '<div class="rec-empty">🎉 You’ve hit your protein target for the day. Nice work!</div>' + micronutrientRecsHtml();
     openModalById('recommend-modal'); return;
   }
   const needP = Math.max(0, remP), needC = Math.max(0, remC), needF = Math.max(0, remF);
@@ -6413,17 +6418,15 @@ function editPendingFood() {
   if (pendingLog && pendingLog.kind === 'food' && pendingLog.refId) openMicrosEditor(pendingLog.refId);
   else toast('Only foods can be edited here');
 }
-// Rank foods by how well they fill what you STILL need, per calorie — so a
-// protein gap steers you to lean protein instead of just "anything that fits".
-// Contributions are capped at the remaining need (overshoot earns nothing),
-// urgency-weighted by how short each macro is, and divided by calories so
-// nutrient-dense picks win. Deficient tracked micronutrients add a bonus.
+// Rank foods by how well they fill what you STILL need, per calorie. Protein is
+// the ONLY macro goal we steer toward — carbs, fat and the calorie budget are
+// intentionally ignored (the user isn't trying to hit those targets). The
+// protein contribution is capped at the remaining need (overshoot earns
+// nothing), urgency-weighted by how short you are, and divided by calories so
+// lean, nutrient-dense picks win. Deficient tracked micronutrients add a bonus.
 function recScore(f, ctx) {
-  const uP = ctx.needP / ctx.gP, uC = ctx.needC / ctx.gC, uF = ctx.needF / ctx.gF; // urgency 0..1+
-  const macroVal =
-    uP * Math.min(f.protein, ctx.needP) / ctx.gP +
-    uC * Math.min(f.carbs, ctx.needC) / ctx.gC +
-    uF * Math.min(f.fat, ctx.needF) / ctx.gF;
+  const uP = ctx.needP / ctx.gP; // protein urgency 0..1+
+  const macroVal = uP * Math.min(f.protein, ctx.needP) / ctx.gP;
   let microVal = 0;
   const fm = foodMicros(f);
   if (fm) ctx.status.forEach(s => {
@@ -6435,8 +6438,7 @@ function recScore(f, ctx) {
   });
   const value = macroVal + 0.5 * microVal;
   if (value <= 0) return 0;
-  let score = value / Math.max(f.kcal, 20) * 1000; // value per calorie
-  if (ctx.remKcal > 0 && f.kcal > ctx.remKcal) score *= ctx.remKcal / f.kcal; // demote calorie-budget blowers
+  let score = value / Math.max(f.kcal, 20) * 1000; // value per calorie → lean, nutrient-dense picks win
   score *= (1 + inventoryUrgencyBoost(f)); // nudge foods you own that are near best-by
   return score;
 }
@@ -6486,14 +6488,10 @@ function suggestSearch(name) {
   if (inp) { inp.value = name; renderLogSearch(); }
 }
 function recWhy(f, ctx) {
-  const uP = ctx.needP / ctx.gP, uC = ctx.needC / ctx.gC, uF = ctx.needF / ctx.gF;
-  const c = [
-    ['protein', uP * Math.min(f.protein, ctx.needP) / ctx.gP, `${f.protein}g protein`],
-    ['carbs', uC * Math.min(f.carbs, ctx.needC) / ctx.gC, `${f.carbs}g carbs`],
-    ['fat', uF * Math.min(f.fat, ctx.needF) / ctx.gF, `${f.fat}g fat`]
-  ].sort((a, b) => b[1] - a[1]);
-  // If it's notably lean for what it delivers, say so.
-  const perCal = f.kcal > 0 ? (f.protein / f.kcal) : 0;
+  // Protein & micronutrients are the only reasons we recommend a food; carbs and
+  // fat aren't touted (they're not a goal here).
+  const proteinFills = ctx.needP > 0 && f.protein > 0;
+  const perCal = f.kcal > 0 ? (f.protein / f.kcal) : 0; // lean-ness of the protein
   // Micronutrient it meaningfully helps with (biggest current gap it covers).
   const fm = foodMicros(f);
   let microName = '';
@@ -6505,10 +6503,10 @@ function recWhy(f, ctx) {
   }
   const parts = [];
   if (inventoryUrgencyBoost(f) > 0) parts.push('🧺 use soon (near best-by)');
-  if (c[0][1] > 0) parts.push('Fills your ' + c[0][2]);
-  if (c[0][0] === 'protein' && perCal >= 0.12) parts.push('lean protein');
+  if (proteinFills) parts.push(`${f.protein}g protein`);
+  if (proteinFills && perCal >= 0.12) parts.push('lean protein');
   if (microName) parts.push('good source of ' + microName);
-  return parts.length ? parts.join(' · ') : ('Balanced pick · ' + f.kcal + ' cal');
+  return parts.length ? parts.join(' · ') : 'Helps round out your nutrients';
 }
 
 // ── Override navigation / overlays to wire in the new screens ────────────────
@@ -6553,7 +6551,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v75 · 2026-07-07';
+const APP_VERSION = 'v76 · 2026-07-11';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

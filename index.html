@@ -2266,9 +2266,22 @@ function recipeFoods() {
 }
 function getFood(id) { return allFoods().find(f => f.id === id); }
 // Match a food by its current name OR its original (pre-rename) name.
+// Normalize text for search: lowercase, drop apostrophes (so "Barq's" and the
+// curly-quote "Barq’s" both become "barqs"), and turn any other punctuation or
+// whitespace into single spaces. Makes matching insensitive to punctuation.
+function normalizeSearch(s) {
+  return (s || '').toLowerCase()
+    .replace(/[’‘`']/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
 function foodMatches(f, q) {
   if (!q) return true;
-  return f.name.toLowerCase().includes(q) || (f.origName && f.origName.toLowerCase().includes(q));
+  const hay = normalizeSearch(f.name) + ' ' + normalizeSearch(f.origName || '');
+  const tokens = normalizeSearch(q).split(' ').filter(Boolean);
+  if (!tokens.length) return true;
+  // Every query word must appear somewhere — order- and punctuation-independent.
+  return tokens.every(t => hay.includes(t));
 }
 // Recency of use (logged/scanned/added) for ranking search results.
 function foodUsedAt(id) { return (state.foodUsage && state.foodUsage[id]) || 0; }
@@ -6633,7 +6646,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v81 · 2026-07-11';
+const APP_VERSION = 'v82 · 2026-07-11';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v75-2026-07-07';
+const VERSION = 'plateiq-v76-2026-07-11';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 

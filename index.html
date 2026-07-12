@@ -2168,6 +2168,7 @@ const FOOD_LIBRARY = [
   {id:'c53',emoji:'🥦',name:'Beef & broccoli',category:'Prepared',tags:['Takeout','Savory'],serving:'1 cup',kcal:320,protein:24,carbs:16,fat:18},
   {id:'c54',emoji:'🥖',name:'Meatball sub',category:'Prepared',tags:['Hearty','Italian-American'],serving:'1 (6-inch)',kcal:580,protein:28,carbs:58,fat:26},
   {id:'c55',emoji:'🦞',name:'Lobster roll (Luke’s)',category:'Prepared',tags:['Seafood','Lean protein'],serving:'1 sandwich',kcal:380,protein:26,carbs:25,fat:10,micros:{sodium:930,potassium:304,calcium:234,iron:1.8,fiber:1}},
+  {id:'c56',emoji:'🌯',name:'Breakfast burrito (loaded)',category:'Prepared',tags:['Hearty','High protein'],serving:'1 burrito',kcal:995,protein:40,carbs:77,fat:60,micros:{fiber:9,sodium:1835,selenium:60,zinc:4,iron:5.5,calcium:340,potassium:1090,magnesium:80,b12:1.5,b2:0.8,folate:190,b5:2.3,b1:0.55,b6:0.55,b3:5,vita:245,vite:2.5,vitc:12,vitk:16,vitd:2}},
 
   // ── SNACKS ───────────────────────────────────────────────────────────────────
   {id:'s1',emoji:'🍫',name:'Dark chocolate (70%+)',category:'Snack',tags:['Antioxidants','Indulgent'],serving:'1 oz',kcal:170,protein:2,carbs:13,fat:12},
@@ -6677,7 +6678,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v83 · 2026-07-12';
+const APP_VERSION = 'v84 · 2026-07-12';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -2030,6 +2030,7 @@ const FOOD_LIBRARY = [
   {id:'g23',emoji:'🍞',name:'Dinner roll',category:'Grain',tags:['Soft','Side'],serving:'1 roll',kcal:87,protein:3,carbs:15,fat:2},
   {id:'g24',emoji:'🌽',name:'Cornbread',category:'Grain',tags:['Sweet','Crumbly'],serving:'1 piece',kcal:198,protein:4,carbs:28,fat:8},
   {id:'g25',emoji:'🥣',name:'Grits',category:'Grain',tags:['Southern','Creamy'],serving:'1 cup cooked',kcal:150,protein:3,carbs:32,fat:1},
+  {id:'g26',emoji:'🍌',name:'Banana bread',category:'Grain',tags:['Baked','Sweet'],serving:'1 slice',kcal:202,protein:3,carbs:38,fat:5,micros:{fiber:1.1,sodium:214,selenium:8.6,iron:1.2,calcium:43,magnesium:11,zinc:0.27,potassium:107,folate:67,b1:0.18,b2:0.15,b3:1.36,vita:45,b6:0.08,b5:0.2,b12:0.08,vitd:0.23,vite:0.17,vitc:0.8,vitk:0.4}},
 
   // ── VEGETABLES ───────────────────────────────────────────────────────────────
   {id:'v1',emoji:'🥗',name:'Spinach',category:'Vegetable',tags:['Iron','Mild'],serving:'2 cups raw',kcal:14,protein:2,carbs:2,fat:0},
@@ -6678,7 +6679,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v84 · 2026-07-12';
+const APP_VERSION = 'v85 · 2026-07-12';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

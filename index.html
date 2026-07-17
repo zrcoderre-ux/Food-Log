@@ -1712,7 +1712,16 @@ body {
       <div class="section-head">Foods in this recipe</div>
       <div id="rb-items"></div>
       <button class="add-food-btn" style="margin-top:8px;" onclick="openFoodPicker('recipe')">＋ Add food from your list</button>
-      <button class="add-food-btn" style="margin-top:8px;" onclick="closeModal('recipe-build-modal');openScanner('willeat')">📷 Scan a barcode to add a food</button>
+      <button class="add-food-btn" style="margin-top:8px;" onclick="scanForRecipe()">📷 Scan a barcode to add a food</button>
+      <div class="form-group" id="rb-manual-macros" style="margin-top:14px;">
+        <label>Per-serving macros <span style="color:var(--text3);font-weight:400;">(for a typed recipe with no component foods above)</span></label>
+        <div style="display:flex;gap:8px;">
+          <input type="number" id="rb-kcal" min="0" step="any" placeholder="cal" style="flex:1;min-width:0;">
+          <input type="number" id="rb-protein" min="0" step="any" placeholder="P (g)" style="flex:1;min-width:0;">
+          <input type="number" id="rb-carbs" min="0" step="any" placeholder="C (g)" style="flex:1;min-width:0;">
+          <input type="number" id="rb-fat" min="0" step="any" placeholder="F (g)" style="flex:1;min-width:0;">
+        </div>
+      </div>
       <div class="form-group" style="margin-top:14px;">
         <label>Extra ingredients <span style="color:var(--text3);font-weight:400;">(optional, one per line — added to the list)</span></label>
         <textarea id="rb-ingredients" style="width:100%;height:70px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="e.g. 2 tbsp olive oil&#10;Salt & pepper to taste"></textarea>
@@ -3169,12 +3178,19 @@ let recipeBuild = null; // working draft: { editId, items:[{foodId,qty}] }
 function openRecipeBuilder(editId) {
   ensureDataModel();
   const r = editId ? state.recipes.find(x => x.id === editId) : null;
-  recipeBuild = { editId: editId || null, items: (r && r.items) ? JSON.parse(JSON.stringify(r.items)) : [] };
+  recipeBuild = { editId: editId || null, items: (r && r.items) ? JSON.parse(JSON.stringify(r.items)) : [],
+    source: r ? (r.source || '') : '', tags: (r && r.tags) ? r.tags.slice() : [] };
   document.getElementById('recipe-build-title').textContent = r ? 'Edit recipe' : 'Build a recipe';
   document.getElementById('rb-name').value = r ? r.name : '';
   document.getElementById('rb-servings').value = r ? (r.servings || 1) : 1;
   document.getElementById('rb-ingredients').value = r ? (r.ingredients || []).join('\n') : '';
   document.getElementById('rb-instructions').value = r ? (r.instructions || []).join('\n') : '';
+  // Manual per-serving macros — shown for a typed recipe (no component foods).
+  const typed = r && !((r.items || []).length);
+  document.getElementById('rb-kcal').value    = typed && r.kcal    != null ? r.kcal    : '';
+  document.getElementById('rb-protein').value = typed && r.protein != null ? r.protein : '';
+  document.getElementById('rb-carbs').value   = typed && r.carbs   != null ? r.carbs   : '';
+  document.getElementById('rb-fat').value     = typed && r.fat     != null ? r.fat     : '';
   renderRecipeBuilder();
   openModalById('recipe-build-modal');
 }
@@ -3194,14 +3210,22 @@ function rbAdjustQty(i, delta) {
 function rbRemove(i) { recipeBuild.items.splice(i, 1); renderRecipeBuilder(); }
 function renderRecipeBuilder() {
   if (!recipeBuild) return;
-  const servings = Math.max(1, parseInt(document.getElementById('rb-servings').value) || 1);
-  const t = recipeTotals(recipeBuild.items);
-  const per = (v) => Math.round(v / servings);
-  document.getElementById('rb-preview').innerHTML = recipeBuild.items.length
-    ? `<b>Per serving</b> (÷ ${servings}): ${per(t.kcal)} cal · P${per(t.protein)}g C${per(t.carbs)}g F${per(t.fat)}g<br><span style="color:var(--text3);">Whole recipe: ${Math.round(t.kcal)} cal</span>`
-    : `<span style="color:var(--text3);">Add foods to see the per-serving nutrition.</span>`;
+  const hasItems = recipeBuild.items.length > 0;
+  // Component foods drive the macros; a typed recipe (no foods) enters them by hand.
+  const manual = document.getElementById('rb-manual-macros');
+  const preview = document.getElementById('rb-preview');
+  if (manual) manual.style.display = hasItems ? 'none' : '';
+  if (hasItems) {
+    const servings = Math.max(1, parseInt(document.getElementById('rb-servings').value) || 1);
+    const t = recipeTotals(recipeBuild.items);
+    const per = (v) => Math.round(v / servings);
+    preview.style.display = '';
+    preview.innerHTML = `<b>Per serving</b> (÷ ${servings}): ${per(t.kcal)} cal · P${per(t.protein)}g C${per(t.carbs)}g F${per(t.fat)}g<br><span style="color:var(--text3);">Whole recipe: ${Math.round(t.kcal)} cal</span>`;
+  } else {
+    preview.style.display = 'none';
+  }
   const list = document.getElementById('rb-items');
-  list.innerHTML = recipeBuild.items.length ? recipeBuild.items.map((it, i) => {
+  list.innerHTML = hasItems ? recipeBuild.items.map((it, i) => {
     const f = lookupFoodOrRecipe(it.foodId); if (!f) return '';
     return `<div class="meal-item">
       <span class="mi-emoji">${foodIcon(f, 24)}</span>
@@ -3210,26 +3234,41 @@ function renderRecipeBuilder() {
       <div class="mi-qty"><div class="qty-btn" onclick="rbAdjustQty(${i},-1)">−</div><div class="qty-val">${it.qty}</div><div class="qty-btn" onclick="rbAdjustQty(${i},1)">+</div></div>
       <div class="mi-remove" onclick="rbRemove(${i})">✕</div>
     </div>`;
-  }).join('') : `<div style="text-align:center;padding:12px;font-size:13px;color:var(--text3);">No foods yet — add some below.</div>`;
+  }).join('') : `<div style="text-align:center;padding:12px;font-size:13px;color:var(--text3);">No foods yet — add some below, or enter per-serving macros.</div>`;
 }
 function saveBuiltRecipe() {
   ensureDataModel();
   const name = (document.getElementById('rb-name').value || '').trim();
   if (!name) { toast('Enter a recipe name'); return; }
-  if (!recipeBuild || !recipeBuild.items.length) { toast('Add at least one food'); return; }
+  if (!recipeBuild) recipeBuild = { editId: null, items: [], source: '', tags: [] };
+  const hasItems = recipeBuild.items.length > 0;
+  const numOr = (elid) => { const v = parseFloat(document.getElementById(elid).value); return isNaN(v) || v < 0 ? null : Math.round(v * 100) / 100; };
+  if (!hasItems && numOr('rb-kcal') == null) { toast('Add a food, or enter the calories'); return; }
   const servings = Math.max(1, parseInt(document.getElementById('rb-servings').value) || 1);
-  const t = recipeTotals(recipeBuild.items);
-  const per = (v) => Math.round((v / servings) * 100) / 100;
-  const microsPer = {}; Object.keys(t.micros).forEach(k => { const v = t.micros[k] / servings; if (v > 0) microsPer[k] = Math.round(v * 100) / 100; });
   const ingredients = (document.getElementById('rb-ingredients').value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
   const instructions = (document.getElementById('rb-instructions').value || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
   const id = recipeBuild.editId || ('r_' + Date.now());
-  const recipe = {
-    id, name, servings, items: JSON.parse(JSON.stringify(recipeBuild.items)),
-    ingredients, instructions, source: '', serving: '1 serving',
-    kcal: per(t.kcal), protein: per(t.protein), carbs: per(t.carbs), fat: per(t.fat), micros: microsPer,
-    built: true, tags: ['Recipe'], createdAt: new Date().toISOString(),
-  };
+  const tags = (recipeBuild.tags && recipeBuild.tags.length) ? recipeBuild.tags : ['Recipe'];
+  let recipe;
+  if (hasItems) {
+    const t = recipeTotals(recipeBuild.items);
+    const per = (v) => Math.round((v / servings) * 100) / 100;
+    const microsPer = {}; Object.keys(t.micros).forEach(k => { const v = t.micros[k] / servings; if (v > 0) microsPer[k] = Math.round(v * 100) / 100; });
+    recipe = {
+      id, name, servings, items: JSON.parse(JSON.stringify(recipeBuild.items)),
+      ingredients, instructions, source: recipeBuild.source || '', serving: '1 serving',
+      kcal: per(t.kcal), protein: per(t.protein), carbs: per(t.carbs), fat: per(t.fat), micros: microsPer,
+      built: true, tags, createdAt: new Date().toISOString(),
+    };
+  } else {
+    // Typed recipe: per-serving macros entered by hand, no component foods.
+    recipe = {
+      id, name, servings, items: [],
+      ingredients, instructions, source: recipeBuild.source || '', serving: '1 serving',
+      kcal: numOr('rb-kcal'), protein: numOr('rb-protein'), carbs: numOr('rb-carbs'), fat: numOr('rb-fat'), micros: {},
+      estimated: false, built: false, tags, createdAt: new Date().toISOString(),
+    };
+  }
   const idx = state.recipes.findIndex(x => x.id === id);
   if (idx >= 0) { recipe.createdAt = state.recipes[idx].createdAt || recipe.createdAt; state.recipes[idx] = recipe; }
   else state.recipes.push(recipe);
@@ -4201,7 +4240,7 @@ function renderRecipesList() {
         ${(r.tags||[]).map(t=>`<span class="rc-tag">${t}</span>`).join('')}
       </div>
       <div class="rc-actions" onclick="event.stopPropagation()">
-        <button class="rc-btn rc-btn-primary" onclick="${r.built ? `openRecipeBuilder('${r.id}')` : `openRecipeView('${r.id}')`}">✎ Edit</button>
+        <button class="rc-btn rc-btn-primary" onclick="openRecipeBuilder('${r.id}')">✎ Edit</button>
         <button class="rc-btn rc-btn-secondary" onclick="logFood('${r.id}')">Log</button>
         <label class="fli-snack" title="Recommend as a snack" style="margin-left:auto;">
           <input type="checkbox" ${state.preferSnack[r.id] ? 'checked' : ''} onchange="toggleSnackFromList('${r.id}', this.checked)"> snack
@@ -5335,7 +5374,10 @@ async function lookupBarcode(code) {
     // Scanned foods always go straight to Will-Eat — never into the swipe queue.
     state.ratings[fid] = 'yes';
     const result = { fid, name, brand: p.brands || '', img, serving, kcal, protein, carbs, fat };
-    if (scanMode === 'willeat') {
+    if (scanMode === 'recipe') {
+      saveState();
+      showScanRecipe(result);
+    } else if (scanMode === 'willeat') {
       saveState();
       showScanWillEat(result);
     } else {
@@ -5371,6 +5413,24 @@ function showScanWillEat(p) {
     <button class="btn-secondary" onclick="closeScanner();openMicrosEditor('${p.fid}')">✎ Edit values / nutrients</button>
     <button class="btn-secondary" onclick="closeScannerToFoods()">Done</button>`;
 }
+// Scanning from inside the recipe builder: keep the in-progress recipe (its
+// draft + typed fields persist), scan, then add the product to the recipe and
+// reopen the builder — instead of closing the recipe out.
+function scanForRecipe() { closeModal('recipe-build-modal'); openScanner('recipe'); }
+function showScanRecipe(p) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  const el = document.getElementById('scanner-result'); el.style.display = 'block';
+  el.innerHTML = `<div class="scan-product">
+      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
+      <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
+    </div>
+    <button class="btn-primary" onclick="addScannedToRecipe('${p.fid}')">＋ Add to recipe</button>
+    <button class="btn-secondary" onclick="openScanner('recipe')">Scan another</button>
+    <button class="btn-secondary" onclick="backToRecipe()">Back to recipe</button>`;
+}
+function addScannedToRecipe(fid) { closeScanner(); recipeBuildAddFood(fid); }
+function backToRecipe() { closeScanner(); openModalById('recipe-build-modal'); renderRecipeBuilder(); }
 function closeScannerToFoods() {
   closeScanner();
   // Refresh the meal builder (current view) and the Foods swipe stats so the
@@ -6679,7 +6739,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v85 · 2026-07-12';
+const APP_VERSION = 'v86 · 2026-07-12';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

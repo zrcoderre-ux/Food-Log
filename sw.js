@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v86-2026-07-12';
+const VERSION = 'plateiq-v87-2026-10-20';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -95,8 +95,12 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req).then((res) => {
-        const clone = res.clone();
-        caches.open(SHELL_CACHE).then((c) => c.put('./index.html', clone));
+        // Only a good response may replace the cached shell; a 404/500 from
+        // the host must not overwrite the last working copy of the app.
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(SHELL_CACHE).then((c) => c.put('./index.html', clone));
+        }
         return res;
       }).catch(() => caches.match('./index.html').then((c) => c || caches.match('./')))
     );

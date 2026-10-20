@@ -1,9 +1,10 @@
 # PlateIQ — Food & Macro Tracker (PWA)
 
-An installable, offline-capable progressive web app for tracking food and macros —
-in the spirit of MyFitnessPal — that also folds in the original **PlateIQ meal
-planner**. Everything runs client-side; your data lives in your browser's
-`localStorage` (with optional Google Drive backup).
+An installable, offline-capable progressive web app for tracking food, macros
+and micronutrients, in the spirit of MyFitnessPal, with a meal builder, recipes
+and a weekly planner built in. Everything runs client-side: your data lives in
+your browser's `localStorage`, with optional cross-device cloud sync and a local
+JSON backup. Light and dark themes.
 
 ## Features
 
@@ -13,16 +14,24 @@ planner**. Everything runs client-side; your data lives in your browser's
 - **Barcode scanning** — uses the browser `BarcodeDetector` API + camera, with a
   manual-entry fallback. Products are looked up via the free
   [Open Food Facts](https://world.openfoodfacts.org) database and logged in one tap.
-- **Fitbit sync** — connect your Fitbit account (OAuth 2.0 implicit grant, no
-  server needed) to pull steps and activity calories, which adjust your daily
-  calorie budget. See setup below.
-- **Smart recommendations** — given how much of each macro you have left for the
-  day, it ranks foods you like to help you close the gap without overshooting.
-- **Meal planner (original app)** — food swipe-rating, meal builder, weekly
-  planner, recipe import (PDF/text), MyFitnessPal CSV import, and Excel export —
-  all preserved as tabs.
+- **Steps & activity** — Google Health (including a migrated Fitbit device)
+  and/or Apple Health via a zero-touch Shortcut. Active calories raise your
+  daily budget; steps and resting heart rate show on Today and in Trends.
+- **Smart recommendations** — ranks foods you like by the protein you still
+  need and the vitamins and minerals you are short on (today and habitually),
+  penalises sodium, and nudges foods in your inventory that are near best-by.
+- **Vitamins & minerals** — 20 nutrients tracked over their natural windows
+  (daily, a few days, weekly) from USDA and label data; editable per food.
+- **Meals, recipes & planner** — swipe-rate foods you will/won't eat, build and
+  save meals (meals you log are saved automatically), build recipes from foods
+  or import them from PDF/text, plan the week, import MyFitnessPal CSVs, export
+  a CSV.
+- **Water, inventory, energy** — hydration tracker, pantry items with best-by
+  and low-stock alerts, and adaptive energy check-ins with insights that
+  correlate energy with food, macros and movement.
 - **Installable & offline** — web app manifest + service worker cache the app
-  shell so it launches and works without a connection.
+  shell so it launches and works without a connection. Follows your system's
+  light/dark setting, or pick one in Settings → Appearance.
 
 ## Running / hosting
 
@@ -177,6 +186,33 @@ an online launch always loads the latest deploy, and a new version reloads
 itself once it activates. No reinstalling. Settings shows the running version
 and a **Check for updates** link.
 
+When you ship a change, bump both version strings so installed copies refresh
+their cached shell: `APP_VERSION` in `index.html` and `VERSION` in `sw.js`.
+
+## Development
+
+There is no build step: edit `index.html` and reload. To run it locally with a
+real origin (needed for the service worker and camera):
+
+```bash
+npm start            # serves the folder on http://localhost:8080
+```
+
+A headless smoke test drives the app in Chromium in both colour schemes
+(tabs, settings, adding and logging a food, meal builder, planner, exports,
+Escape-to-close, theme override) and fails on any console error. Screenshots
+land in `tools/smoke-out/`.
+
+```bash
+npm install
+npx playwright install chromium
+npm test
+```
+
+The same test runs in GitHub Actions on every pull request and on pushes to
+non-`main` branches (`.github/workflows/ci.yml`). `CODE-REVIEW.md` records the
+findings of the last full review and what was deferred.
+
 ## Files
 
 | File | Purpose |
@@ -188,3 +224,6 @@ and a **Check for updates** link.
 | `supabase-push-cron.sql` | Schedules the energy-reminder sender (pg_cron) |
 | `supabase/functions/push-energy/` | Edge function that sends Web Push reminders |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
+| `tools/smoke.js`, `package.json` | Headless smoke test (`npm test`) |
+| `.github/workflows/` | GitHub Pages deploy and the CI smoke test |
+| `CODE-REVIEW.md` | Review findings and their status |

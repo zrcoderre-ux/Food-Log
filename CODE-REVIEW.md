@@ -60,7 +60,7 @@ Status key: **Fixed** (in this branch) · **Deferred** (noted, with the reason).
 | 3.3 | Form labels were not associated with their inputs; search inputs had no accessible name. | Fixed where the field has an id; `aria-label` elsewhere. |
 | 3.4 | No `:focus-visible` styling; no `prefers-reduced-motion`. | Fixed. |
 | 3.5 | Focus is not trapped inside open sheets and not returned to the opener on close. | Deferred: needs a small focus-management helper; Escape and backdrop-tap close already work. |
-| 3.6 | Colour contrast of `--text3` (#A8A39D on #FFF, ~2.4:1) for secondary labels is below AA for small text. | Deferred: it is used for de-emphasised hints; darkening it changes the visual hierarchy, so this is a design call. |
+| 3.6 | Colour contrast of `--text3` (#A8A39D on #FFF, about 2.5:1) for secondary labels is below AA for small text. | Deferred: it is used for de-emphasised hints; darkening it changes the visual hierarchy, so this is a design call. |
 
 ## 4. Maintainability
 

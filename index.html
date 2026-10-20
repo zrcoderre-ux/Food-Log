@@ -58,8 +58,6 @@
   color-scheme: light;
 }
 /* Dark scheme: follows the OS unless the user picks Light/Dark in Settings. */
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --dark: 1; } }
-:root[data-theme="dark"] { --dark: 1; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
@@ -258,7 +256,7 @@ input::placeholder, textarea::placeholder { color: var(--text3); opacity: 1; }
   padding: 6px 8px;
   background: var(--surface2);
   color: var(--text);
-  max-width: 60%;
+  max-width: 64%;
 }
 .settings-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
 
@@ -2535,10 +2533,7 @@ function openSettings() {
   renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); renderNutritionixSettings();
   openModalById('settings-overlay');
 }
-function closeSettings() {
-  closeModal('settings-overlay');
-  if (document.getElementById('screen-today').classList.contains('active')) renderDiary();
-}
+function closeSettings() { closeModal('settings-overlay'); }
 
 // ════════════════════════════════════════ NAVIGATION ══════════════════════════
 function switchTab(id, el) {
@@ -4721,12 +4716,14 @@ function closeModal(id) {
   if (id === 'scanner-modal') stopScan();
   el.classList.remove('open');
   if (!document.querySelector('.modal-overlay.open, .overlay.open')) document.body.classList.remove('modal-open');
+  // Settings can change the budget; refresh Today however the drawer was dismissed.
+  if (id === 'settings-overlay' && document.getElementById('screen-today').classList.contains('active')) renderDiary();
 }
 function closeTopModal() {
   const open = [...document.querySelectorAll('.modal-overlay.open, .overlay.open')];
   if (!open.length) return false;
   open.sort((a, b) => (parseInt(getComputedStyle(b).zIndex, 10) || 0) - (parseInt(getComputedStyle(a).zIndex, 10) || 0));
-  if (open[0].id === 'settings-overlay') closeSettings(); else closeModal(open[0].id);
+  closeModal(open[0].id);
   return true;
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && closeTopModal()) e.preventDefault(); });

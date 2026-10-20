@@ -1311,7 +1311,7 @@ body {
         <div class="week-label" id="week-label">This week</div>
         <div class="week-nav-btn" onclick="changeWeek(1)">›</div>
       </div>
-      <button onclick="exportXLSX()" style="background:none;border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text2);cursor:pointer;font-weight:500;">📊 Export</button>
+      <button onclick="exportCSV()" style="background:none;border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text2);cursor:pointer;font-weight:500;">📊 Export</button>
     </div>
 
     <div class="week-summary-card">
@@ -1333,7 +1333,6 @@ body {
       <div class="steps-legend">
         <span><i style="background:var(--accent)"></i>Watch</span>
         <span><i style="background:var(--fat)"></i>Apple Health</span>
-        <span><i style="background:var(--carb)"></i>Phone</span>
       </div>
     </div>
     <div class="steps-card" id="nutrient-card">
@@ -1454,11 +1453,11 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Backup & export</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Cloud sync already backs up across your devices. Use these for a local copy: <b>Backup</b> saves a JSON file (no passwords/tokens), <b>Restore</b> loads one, and <b>Excel</b> exports your diary, daily totals, steps, energy and micronutrients as a spreadsheet.</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Cloud sync already backs up across your devices. Use these for a local copy: <b>Backup</b> saves a JSON file (no passwords/tokens), <b>Restore</b> loads one, and <b>CSV</b> exports your diary, daily totals, steps, energy and micronutrients as a spreadsheet (opens in Excel, Numbers or Sheets).</p>
       <div class="export-grid">
         <div class="export-btn" onclick="exportJSON()"><span class="eicon">💾</span>Backup</div>
         <div class="export-btn" onclick="importJSON()"><span class="eicon">📂</span>Restore</div>
-        <div class="export-btn" onclick="exportXLSX()"><span class="eicon">📊</span>Excel</div>
+        <div class="export-btn" onclick="exportCSV()"><span class="eicon">📊</span>CSV</div>
       </div>
       <input type="file" id="import-file" accept=".json" style="display:none;" onchange="handleImport(event)">
     </div>
@@ -2302,8 +2301,8 @@ function markFoodUsed(id) { if (!id) return; ensureDataModel(); state.foodUsage[
 function foodIcon(o, px) {
   px = px || 24;
   const emoji = (o && o.emoji) ? o.emoji : '🍽️';
-  if (o && o.image) return `<img src="${escapeHtml(o.image)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:5px;vertical-align:middle;" onerror="this.replaceWith(document.createTextNode('${emoji}'))">`;
-  return emoji;
+  if (o && o.image) return `<img src="${escapeHtml(o.image)}" alt="" data-emoji="${escapeHtml(emoji)}" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:5px;vertical-align:middle;" onerror="this.replaceWith(document.createTextNode(this.dataset.emoji))">`;
+  return escapeHtml(emoji);
 }
 // Effective micronutrients for a food: its built-in data (USDA) merged with any
 // values the user typed (overrides win). Persisted, so future logs/scans carry them.
@@ -2318,7 +2317,24 @@ function foodMicros(f) {
 function acceptedFoods() { return allFoods().filter(f => state.ratings[f.id] === 'yes'); }
 
 // ════════════════════════════════════════ STORAGE ═════════════════════════════
-function saveState() { localStorage.setItem('plateiq_v1', JSON.stringify(state)); }
+// Write state to localStorage. A full store (QuotaExceededError — usually from
+// too many custom photos) is reported once instead of silently losing data.
+let _quotaWarned = false, _cloudPushTimer = null;
+function persistLocal() {
+  try { localStorage.setItem('plateiq_v1', JSON.stringify(state)); _quotaWarned = false; }
+  catch (e) {
+    if (!_quotaWarned) { _quotaWarned = true; toast('Storage is full — remove some custom photos or foods'); }
+    console.error('saveState failed', e);
+  }
+}
+// Every local save also schedules a debounced push to the cloud (when signed in).
+function saveState() {
+  persistLocal();
+  if (sbAuthed()) {
+    if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
+    _cloudPushTimer = setTimeout(() => { _cloudPushTimer = null; pushCloud(); }, 2500);
+  }
+}
 // Record a deletion so a later cloud sync won't merge the item back in. Keyed
 // "type:id" with the deletion time; re-creating an item (which bumps its
 // foodUsage / uses a fresh id) overrides the tombstone.
@@ -2361,10 +2377,15 @@ function updateTargetDisplay() {
   document.getElementById('mc-fat-target').textContent = '/ ' + Math.round(t.fat/state.settings.mealsPerDay) + 'g';
 }
 
+function clampNum(v, lo, hi, fallback) { v = parseFloat(v); return isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback; }
 function saveSettings() {
-  state.settings.weight = +document.getElementById('s-weight').value;
-  state.settings.height = +document.getElementById('s-height').value;
-  state.settings.age = +document.getElementById('s-age').value;
+  const s = state.settings;
+  s.weight = clampNum(document.getElementById('s-weight').value, 50, 700, s.weight);
+  s.height = clampNum(document.getElementById('s-height').value, 36, 96, s.height);
+  s.age = clampNum(document.getElementById('s-age').value, 10, 110, s.age);
+  document.getElementById('s-weight').value = s.weight;
+  document.getElementById('s-height').value = s.height;
+  document.getElementById('s-age').value = s.age;
   state.settings.sex = document.getElementById('s-sex').value;
   state.settings.activity = +document.getElementById('s-activity').value;
   saveState();
@@ -2403,27 +2424,50 @@ function loadSettingsUI() {
   updateTargetDisplay();
 }
 
-function openSettings() { document.getElementById('settings-overlay').classList.add('open'); }
-function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
+// Appearance: 'auto' follows the OS, 'light'/'dark' force a scheme. The <head>
+// applies the stored choice before first paint so there's no flash.
+function applyTheme() {
+  const t = (state.settings && state.settings.theme) || 'auto';
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  const dark = t === 'dark' || (t === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#1E2220' : '#2D6A4F';
+  document.querySelectorAll('#theme-chips .chip').forEach(c => c.classList.toggle('active', c.dataset.theme === t));
+}
+function selectTheme(el) {
+  state.settings.theme = el.dataset.theme || 'auto';
+  saveState(); applyTheme();
+}
+if (window.matchMedia) { try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme()); } catch (e) {} }
+
+function openSettings() {
+  renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); renderNutritionixSettings();
+  openModalById('settings-overlay');
+}
+function closeSettings() {
+  closeModal('settings-overlay');
+  if (document.getElementById('screen-today').classList.contains('active')) renderDiary();
+}
 
 // ════════════════════════════════════════ NAVIGATION ══════════════════════════
 function switchTab(id, el) {
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(t=>t.classList.remove('active'));
-  document.getElementById('screen-'+id).classList.add('active');
-  el.classList.add('active');
-  if (id === 'foods') foodsEntry();
-  if (id === 'builder') renderBuilder();
-  if (id === 'planner') renderPlanner();
-  if (id === 'history') renderHistory();
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+  const scr = document.getElementById('screen-' + id); if (scr) scr.classList.add('active');
+  const tab = el || document.querySelector(`.tab-btn[data-tab="${id}"]`);
+  if (tab) { tab.classList.add('active'); tab.setAttribute('aria-selected', 'true'); }
+  if (id === 'today') renderDiary();
+  else if (id === 'foods') foodsEntry();
+  else if (id === 'builder') renderBuilder();
+  else if (id === 'planner') renderPlanner();
+  else if (id === 'history') renderHistory();
+  window.scrollTo(0, 0);
 }
 
+// Tapping the dimmed backdrop closes the sheet (and stops the camera if it was the scanner).
 function overlayClick(e, id) {
-  if (e.target === document.getElementById(id)) {
-    document.getElementById(id).classList.remove('open');
-  }
+  if (e.target === document.getElementById(id)) closeModal(id);
 }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -2481,7 +2525,7 @@ function renderSwipeCard() {
   document.getElementById('card-name').textContent = food.name;
   document.getElementById('card-category').textContent = food.category + ' · ' + (food.serving || '');
   const tagsEl = document.getElementById('card-tags');
-  tagsEl.innerHTML = (food.tags || []).map(t=>`<span class="card-tag">${t}</span>`).join('');
+  tagsEl.innerHTML = (food.tags || []).map(t=>`<span class="card-tag">${escapeHtml(t)}</span>`).join('');
   document.getElementById('card-macros').innerHTML = `
     <span><b>${food.kcal}</b>cal</span>
     <span><b>${food.protein}g</b>protein</span>
@@ -2517,40 +2561,41 @@ function doSwipe(dir) {
   }, 350);
 }
 
-// drag support
-let dragStartX = 0, dragStartY = 0, dragging = false;
+// Drag-to-rate. Listeners are attached once (not on every render), and the
+// window-level mouse handlers are scoped so they don't clobber other code.
+let dragStartX = 0, dragging = false, dragBound = false;
 function setupDrag() {
   const card = document.getElementById('food-card');
   card.style.transform = '';
-  const ly = document.getElementById('label-yes');
-  const ln = document.getElementById('label-no');
-  ly.style.opacity = '0'; ln.style.opacity = '0';
-
-  function start(cx) { dragStartX = cx; dragging = true; card.classList.add('dragging'); }
-  function move(cx) {
+  document.getElementById('label-yes').style.opacity = '0';
+  document.getElementById('label-no').style.opacity = '0';
+  if (dragBound) return;
+  dragBound = true;
+  const ly = document.getElementById('label-yes'), ln = document.getElementById('label-no');
+  const start = (cx) => { dragStartX = cx; dragging = true; card.classList.add('dragging'); };
+  const move = (cx) => {
     if (!dragging) return;
     const dx = cx - dragStartX;
-    const rot = dx * 0.06;
-    card.style.transform = `translateX(${dx}px) rotate(${rot}deg)`;
-    const ratio = Math.min(Math.abs(dx)/80, 1);
+    card.style.transform = `translateX(${dx}px) rotate(${dx * 0.06}deg)`;
+    const ratio = Math.min(Math.abs(dx) / 80, 1);
     ly.style.opacity = dx > 20 ? ratio : 0;
     ln.style.opacity = dx < -20 ? ratio : 0;
-  }
-  function end(cx) {
+  };
+  const end = (cx) => {
     if (!dragging) return;
     dragging = false;
     card.classList.remove('dragging');
     const dx = cx - dragStartX;
     if (dx > 70) doSwipe('yes');
     else if (dx < -70) doSwipe('no');
-    else { card.style.transform = ''; document.getElementById('label-yes').style.opacity='0'; document.getElementById('label-no').style.opacity='0'; }
-  }
-  card.onmousedown = e => start(e.clientX);
-  window.onmousemove = e => move(e.clientX);
-  window.onmouseup = e => end(e.clientX);
-  card.ontouchstart = e => start(e.touches[0].clientX);
-  card.ontouchmove = e => { e.preventDefault(); move(e.touches[0].clientX); };
-  card.ontouchend = e => end(e.changedTouches[0].clientX);
+    else { card.style.transform = ''; ly.style.opacity = '0'; ln.style.opacity = '0'; }
+  };
+  card.addEventListener('mousedown', e => start(e.clientX));
+  window.addEventListener('mousemove', e => { if (dragging) move(e.clientX); });
+  window.addEventListener('mouseup', e => end(e.clientX));
+  card.addEventListener('touchstart', e => start(e.touches[0].clientX), { passive: true });
+  card.addEventListener('touchmove', e => { e.preventDefault(); move(e.touches[0].clientX); }, { passive: false });
+  card.addEventListener('touchend', e => end(e.changedTouches[0].clientX));
 }
 
 function showView(v) {
@@ -2595,7 +2640,7 @@ function renderFoodsList(filter) {
       <span class="fli-emoji">${foodIcon(f, 26)}</span>
       <div class="fli-info" onclick="openMicrosEditor('${f.id}')" style="cursor:pointer;">
         <div class="fli-name">${escapeHtml(f.name)} ${hasMicros ? '🧬' : '<span style="color:var(--text3);font-weight:400;font-size:11px;">✎ edit</span>'}</div>
-        <div class="fli-macros">${f.serving||''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
+        <div class="fli-macros">${escapeHtml(f.serving||'')} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
       </div>
       <label class="fli-snack" title="Recommend as a snack" onclick="event.stopPropagation();">
         <input type="checkbox" ${isSnackFood(f) ? 'checked' : ''} onchange="toggleSnackFromList('${f.id}', this.checked)"> snack
@@ -2609,7 +2654,7 @@ function foodAddRow(f, already) {
   return `<div class="food-list-item">
     <span class="fli-emoji">${foodIcon(f, 26)}</span>
     <div class="fli-info"><div class="fli-name">${escapeHtml(f.name)}${f.brand ? ' · ' + escapeHtml(f.brand) : ''}</div>
-      <div class="fli-macros">${f.serving || ''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div></div>
+      <div class="fli-macros">${escapeHtml(f.serving || '')} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div></div>
     ${already ? '<span class="fli-badge badge-yes">✓ eat</span>'
       : `<span onclick="addLocalToWillEat('${f.id}')" style="cursor:pointer;color:var(--accent);font-weight:600;padding:4px 8px;white-space:nowrap;">＋ add</span>`}
   </div>`;
@@ -3052,7 +3097,7 @@ function openAddFood() {
   const sp = document.getElementById('cf-snack'); if (sp) sp.checked = false; // default: not a snack
   addFoodImage = '';
   updateAddFoodIcon();
-  document.getElementById('add-food-modal').classList.add('open');
+  openModalById('add-food-modal');
 }
 
 function saveCustomFood() {
@@ -3105,61 +3150,6 @@ function builderView(v, el) {
   if (v==='recipes') renderRecipesList();
 }
 
-function calcMealMacros() {
-  let kcal=0,protein=0,carbs=0,fat=0;
-  state.currentMeal.forEach(item => {
-    const f = getFood(item.foodId);
-    if (!f) return;
-    kcal += f.kcal * item.qty;
-    protein += f.protein * item.qty;
-    carbs += f.carbs * item.qty;
-    fat += f.fat * item.qty;
-  });
-  return {kcal:Math.round(kcal),protein:Math.round(protein),carbs:Math.round(carbs),fat:Math.round(fat)};
-}
-
-function renderBuilder() {
-  updateTargetDisplay();
-  const m = calcMealMacros();
-  const t = calcTDEE();
-  const mpt = state.settings.mealsPerDay;
-  document.getElementById('meal-kcal-used').textContent = m.kcal + ' cal';
-  document.getElementById('mc-protein').textContent = m.protein + 'g';
-  document.getElementById('mc-carbs').textContent = m.carbs + 'g';
-  document.getElementById('mc-fat').textContent = m.fat + 'g';
-  document.getElementById('mc-protein-bar').style.width = Math.min(m.protein/(t.protein/mpt)*100,100)+'%';
-  document.getElementById('mc-carbs-bar').style.width = Math.min(m.carbs/(t.carbs/mpt)*100,100)+'%';
-  document.getElementById('mc-fat-bar').style.width = Math.min(m.fat/(t.fat/mpt)*100,100)+'%';
-
-  const el = document.getElementById('meal-items');
-  if (state.currentMeal.length === 0) {
-    el.innerHTML = `<div style="text-align:center;padding:16px;font-size:13px;color:var(--text3);">No foods added yet.</div>`;
-    return;
-  }
-  el.innerHTML = state.currentMeal.map((item,i) => {
-    const f = getFood(item.foodId);
-    if (!f) return '';
-    return `<div class="meal-item">
-      <span class="mi-emoji">${foodIcon(f, 24)}</span>
-      <div class="mi-info">
-        <div class="mi-name">${f.name}</div>
-        <div class="mi-macros">${Math.round(f.kcal*item.qty)} cal · ${Math.round(f.protein*item.qty)}g P · ${Math.round(f.carbs*item.qty)}g C · ${Math.round(f.fat*item.qty)}g F</div>
-      </div>
-      <div class="mi-qty">
-        <div class="qty-btn" onclick="adjustQty(${i},-1)">−</div>
-        <div class="qty-val">${item.qty}</div>
-        <div class="qty-btn" onclick="adjustQty(${i},1)">+</div>
-      </div>
-      <div class="mi-remove" onclick="removeMealItem(${i})">✕</div>
-    </div>`;
-  }).join('');
-}
-
-function adjustQty(i, delta) {
-  state.currentMeal[i].qty = Math.max(0.5, state.currentMeal[i].qty + delta * 0.5);
-  renderBuilder();
-}
-
 function removeMealItem(i) {
   state.currentMeal.splice(i,1);
   renderBuilder();
@@ -3170,7 +3160,7 @@ function openFoodPicker(target) {
   foodPickerTarget = target || 'meal';
   document.getElementById('food-search-input').value = '';
   filterFoodPicker();
-  document.getElementById('food-picker-modal').classList.add('open');
+  openModalById('food-picker-modal');
 }
 
 // ════════════════════════════════════════ RECIPE BUILDER ══════════════════════
@@ -3293,7 +3283,7 @@ function filterFoodPicker() {
       <span class="fpi-emoji">${foodIcon(f, 22)}</span>
       <div class="fpi-info">
         <div class="fpi-name">${escapeHtml(f.name)}</div>
-        <div class="fpi-macros">${f.serving} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
+        <div class="fpi-macros">${escapeHtml(f.serving)} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
       </div>
       <span class="fpi-add">+</span>
     </div>`).join('');
@@ -3308,13 +3298,6 @@ function filterFoodPicker() {
   pickerSearchTimer = setTimeout(() => searchDatabasesInto('picker-db-results', q, seq, 'addOffToMeal'), 350);
 }
 
-function addFoodToMeal(foodId) {
-  const existing = state.currentMeal.find(i=>i.foodId===foodId);
-  if (existing) existing.qty += 1;
-  else state.currentMeal.push({foodId, qty:1});
-  closeModal('food-picker-modal');
-  renderBuilder();
-}
 async function addOffToMeal(id) {
   let f = offCache[id]; if (!f) return;
   ensureDataModel();
@@ -3323,21 +3306,6 @@ async function addOffToMeal(id) {
   state.ratings[f.id] = 'yes'; markFoodUsed(f.id); // also keep it in your Will-Eat list
   saveState();
   addFoodToMeal(f.id);
-}
-
-function saveMeal() {
-  if (state.currentMeal.length === 0) { toast('Add some foods first'); return; }
-  const name = document.getElementById('meal-name-input').value.trim() || 'Meal ' + (state.savedMeals.length+1);
-  const m = calcMealMacros();
-  state.savedMeals.push({
-    id: 'm_'+Date.now(),
-    name,
-    items: JSON.parse(JSON.stringify(state.currentMeal)),
-    ...m
-  });
-  saveState();
-  toast('✓ "' + name + '" saved!');
-  document.getElementById('meal-name-input').value = '';
 }
 
 function renderSavedMeals() {
@@ -3350,7 +3318,7 @@ function renderSavedMeals() {
   el.innerHTML = state.savedMeals.map((meal,i) => `
     <div class="saved-meal-card">
       <div class="smc-header">
-        <span class="smc-name">${meal.name}</span>
+        <span class="smc-name">${escapeHtml(meal.name)}</span>
         <span class="smc-cals">${meal.kcal} cal</span>
       </div>
       <div class="smc-macros" style="margin-bottom:8px;">P:${meal.protein}g · C:${meal.carbs}g · F:${meal.fat}g · ${meal.items.length} foods</div>
@@ -3417,9 +3385,9 @@ function getWeekDays(offset) {
   });
 }
 
-function dateKey(d) {
-  return d.toISOString().slice(0,10);
-}
+// Local-calendar day key (the old UTC-based key shifted a day for evening use
+// west of Greenwich, so planner days didn't line up with the diary's).
+function dateKey(d) { return dkey(d); }
 
 function changeWeek(delta) {
   weekOffset += delta;
@@ -3495,12 +3463,10 @@ function renderDays(days) {
 
   container.innerHTML = days.map((d,di) => {
     const k = dateKey(d);
-    if (!state.planner[k]) state.planner[k] = {meals: slots.map(s=>({slotName:s,mealId:null}))};
-    // ensure slot count matches
-    const plan = state.planner[k];
-    slots.forEach(s => {
-      if (!plan.meals.find(m=>m.slotName===s)) plan.meals.push({slotName:s,mealId:null});
-    });
+    // Read-only view: every active slot is shown, but empty slots aren't written
+    // back into state (that used to bloat every save with blank weeks).
+    const saved = (state.planner[k] && state.planner[k].meals) || [];
+    const plan = { meals: slots.map(s => saved.find(m => m.slotName === s) || { slotName: s, mealId: null }) };
 
     let dayKcal = 0, dayP = 0, dayC = 0, dayF = 0;
     plan.meals.filter(sl=>sl.mealId).forEach(sl => {
@@ -3538,7 +3504,7 @@ function renderDays(days) {
             <div class="dmr-dot" style="background:${SLOT_COLORS[si%SLOT_COLORS.length]}"></div>
             <span class="dmr-type">${slot.slotName}</span>
             ${named
-              ? `<span class="dmr-foods">${isRecipe?'📄 ':''}${named.name}</span>
+              ? `<span class="dmr-foods">${isRecipe?'📄 ':''}${escapeHtml(named.name)}</span>
                  <span class="dmr-cals">${macros.kcal>0?macros.kcal+' cal':''}</span>
                  <span class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')">↻</span>`
               : `<span class="dmr-foods" style="color:var(--text3)">Empty</span>
@@ -3552,7 +3518,7 @@ function renderDays(days) {
 
 function toggleDay(id) {
   const el = document.getElementById(id);
-  if (el) el.style.display = 'block';
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ════════════════════════════════════════ EXPORT / IMPORT ═════════════════════
@@ -3580,6 +3546,8 @@ function handleImport(e) {
   reader.onload = ev => {
     try {
       const imported = JSON.parse(ev.target.result);
+      if (!imported || typeof imported !== 'object' || Array.isArray(imported) || !(imported.settings || imported.diary || imported.customFoods)) { toast('That file isn’t a PlateIQ backup'); return; }
+      delete imported.sync; // never let a file overwrite the live sign-in
       if (!confirm('Restore this backup? It overwrites your diary, settings and foods on this device — your cloud sign-in stays.')) return;
       // Merge the backup over current state so the live sync session (not in the
       // file) is preserved; backed-up data keys win.
@@ -3596,8 +3564,8 @@ function handleImport(e) {
   e.target.value = '';
 }
 
-function exportXLSX() {
-  // A CSV Excel opens perfectly, built from the tracking data: food diary,
+function exportCSV() {
+  // A UTF-8 CSV that Excel, Numbers and Sheets open directly: food diary,
   // daily totals vs. goals, steps/energy, and micronutrient status.
   ensureDataModel();
   const goals = calcTDEE();
@@ -3661,11 +3629,12 @@ function exportXLSX() {
   a.download = `plateiq-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  toast('\u2713 Exported \u2014 open in Excel');
+  toast('Exported as CSV \u2014 opens in Excel, Numbers or Sheets');
 }
 function resetAll() {
-  if (!confirm('Delete ALL data? This cannot be undone.')) return;
+  if (!confirm('Delete ALL data on this device? This cannot be undone. (Data already synced to the cloud stays there until you sign in and sync again.)')) return;
   localStorage.removeItem('plateiq_v1');
+  localStorage.removeItem('plateiq_mfp');
   location.reload();
 }
 
@@ -3696,9 +3665,13 @@ function parseCSV(text) {
   return lines.slice(1).map(line => {
     const vals = [];
     let cur = '', inQ = false;
-    for (const ch of line) {
-      if (ch==='"') { inQ=!inQ; }
-      else if (ch===',' && !inQ) { vals.push(cur.trim()); cur=''; }
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
+        else inQ = !inQ;
+      }
+      else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
       else cur += ch;
     }
     vals.push(cur.trim());
@@ -3834,6 +3807,7 @@ function historyView(type, el) {
 }
 
 function renderHistory() {
+  renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyByTime(); renderEnergyInsights();
   renderHistoryNutrition();
   renderHistoryExercise();
   renderHistoryMeasurements();
@@ -3870,8 +3844,8 @@ function renderHistoryNutrition() {
     return `<div class="day-card" style="margin-bottom:8px;">
       <div class="day-header-row" style="cursor:default;">
         <div class="day-name-group">
-          <span class="day-name">${d.date}</span>
-          <span class="day-date">${d.meals||''}</span>
+          <span class="day-name">${escapeHtml(d.date)}</span>
+          <span class="day-date">${escapeHtml(d.meals||'')}</span>
         </div>
         <span class="day-cals ${d.kcal>t.kcal*1.1?'over':'ok'}">${d.kcal.toLocaleString()} cal</span>
       </div>
@@ -3881,7 +3855,7 @@ function renderHistoryNutrition() {
         <div class="dmb-seg" style="background:var(--fat);flex:${d.fat||1}"></div>
       </div>
       <div class="day-meal-row" style="border-top:none;padding:8px 14px;">
-        <span style="font-size:11px;color:var(--text3);">P: ${d.protein}g &nbsp; C: ${d.carbs}g &nbsp; F: ${d.fat}g &nbsp; <span style="font-size:10px;padding:2px 6px;border-radius:999px;background:${barColor}20;color:${barColor};">${pct}% of target</span></span>
+        <span style="font-size:11px;color:var(--text3);">P: ${d.protein}g &nbsp; C: ${d.carbs}g &nbsp; F: ${d.fat}g &nbsp; <span style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid ${barColor};color:${barColor};">${pct}% of target</span></span>
       </div>
     </div>`;
   }).join('');
@@ -3904,13 +3878,13 @@ function renderHistoryExercise() {
     const totalMin = entries.reduce((s,e)=>s+e.minutes,0);
     return `<div class="day-card" style="margin-bottom:8px;">
       <div class="day-header-row" style="cursor:default;">
-        <span class="day-name">${date}</span>
+        <span class="day-name">${escapeHtml(date)}</span>
         <span style="font-size:12px;color:var(--accent);font-weight:600;">${totalCal>0?'-'+totalCal+' cal':''}</span>
       </div>
       ${entries.map(e=>`<div class="day-meal-row">
         <div class="dmr-dot" style="background:var(--carb);"></div>
-        <span class="dmr-type">${e.type||'Cardio'}</span>
-        <span class="dmr-foods">${e.exercise}</span>
+        <span class="dmr-type">${escapeHtml(e.type||'Cardio')}</span>
+        <span class="dmr-foods">${escapeHtml(e.exercise)}</span>
         <span class="dmr-cals">${e.minutes>0?e.minutes+'min':''}</span>
       </div>`).join('')}
     </div>`;
@@ -3932,17 +3906,13 @@ function renderHistoryMeasurements() {
     return `<div class="food-list-item" style="margin-bottom:6px;">
       <span class="fli-emoji">${m.weight?'⚖️':m.steps?'👟':'📏'}</span>
       <div class="fli-info">
-        <div class="fli-name">${m.date}</div>
+        <div class="fli-name">${escapeHtml(m.date)}</div>
         <div class="fli-macros">${parts.join(' · ')}</div>
       </div>
     </div>`;
   }).join('');
 }
 
-// ════════════════════════════════════════ GOOGLE DRIVE ═══════════════════════
-// Google Drive via file picker — no OAuth server needed.
-// Uses the Google Drive file picker API with a popup, saves/loads JSON backup.
-// User needs to configure CLIENT_ID from Google Cloud Console (free).
 // ════════════════════════════════════════ SMART PORTIONING ═══════════════════
 // Given a food or recipe, returns the qty multiplier that best fills the
 // current meal's remaining calorie budget (based on daily target ÷ meals/day).
@@ -3980,7 +3950,7 @@ function openRecipeUpload() {
   document.getElementById('recipe-pdf-file').value = '';
   document.getElementById('recipe-paste-text').value = '';
   recipeInputMode('pdf', document.getElementById('rtab-pdf'));
-  document.getElementById('recipe-upload-modal').classList.add('open');
+  openModalById('recipe-upload-modal');
 }
 
 function recipeInputMode(mode, el) {
@@ -4104,11 +4074,21 @@ function estimateMacrosFromIngredients(ingredLines, servings) {
   let totKcal = 0, totP = 0, totC = 0, totF = 0, matched = 0;
   const foods = allFoods();
 
+  const reEsc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordIn = (word, text) => new RegExp('\\b' + reEsc(word) + '\\b', 'i').test(text);
   ingredLines.forEach(line => {
     const lower = line.toLowerCase();
-    // Try to find a library food whose name appears in the line
-    const match = foods.find(f => lower.includes(f.name.toLowerCase().split(' ')[0]) ||
-      lower.includes(f.name.toLowerCase()));
+    // Match a library food whose whole name appears as a phrase in the line, or
+    // whose first word does when it's distinctive (≥5 letters — "chicken", not
+    // "raw" or "bell"). Prefer the longest such name so "ground beef" beats "beef".
+    let match = null;
+    foods.forEach(f => {
+      const n = (f.name || '').toLowerCase(); if (!n) return;
+      const first = n.split(' ')[0];
+      if (wordIn(n, lower) || (first.length >= 5 && wordIn(first, lower))) {
+        if (!match || n.length > match.name.length) match = f;
+      }
+    });
     if (!match) return;
     // Try to parse a quantity multiplier from the line (e.g. "2 fillets", "4 oz")
     const qtyMatch = line.match(/^([\d.½¼¾⅓⅔]+)/);
@@ -4171,10 +4151,10 @@ function openRecipeDetailModal(parsed) {
   document.getElementById('rd-tags').value = (parsed.tags || []).join(', ');
 
   document.getElementById('rd-ingredients').innerHTML =
-    (parsed.ingredients || []).map(i => `• ${i}`).join('<br>') || '<em style="color:var(--text3)">None detected</em>';
+    (parsed.ingredients || []).map(i => `• ${escapeHtml(i)}`).join('<br>') || '<em style="color:var(--text3)">None detected</em>';
 
   document.getElementById('rd-instructions').innerHTML =
-    (parsed.instructions || []).map((s, i) => `<b>Step ${i+1}.</b> ${s}`).join('<br><br>') || '<em style="color(var(--text3))">None detected</em>';
+    (parsed.instructions || []).map((s, i) => `<b>Step ${i+1}.</b> ${escapeHtml(s)}`).join('<br><br>') || '<em style="color:var(--text3)">None detected</em>';
 
   // Show auto-estimate note if we matched library ingredients
   const estEl = document.getElementById('rd-auto-estimate');
@@ -4185,7 +4165,7 @@ function openRecipeDetailModal(parsed) {
     estEl.style.display = 'none';
   }
 
-  document.getElementById('recipe-detail-modal').classList.add('open');
+  openModalById('recipe-detail-modal');
 }
 
 function saveRecipe() {
@@ -4230,14 +4210,14 @@ function renderRecipesList() {
       : 'Macros not set';
     return `<div class="recipe-card" onclick="openRecipeView('${r.id}')">
       <div class="rc-header">
-        <div class="rc-name">📄 ${r.name}</div>
+        <div class="rc-name">📄 ${escapeHtml(r.name)}</div>
         ${r.kcal ? `<div class="rc-cals">${r.kcal} cal</div>` : ''}
       </div>
-      ${r.source ? `<div class="rc-source">${r.source}</div>` : ''}
+      ${r.source ? `<div class="rc-source">${escapeHtml(r.source)}</div>` : ''}
       <div class="rc-macros">${macroStr} · ${r.servings} serving${r.servings>1?'s':''}</div>
       <div class="rc-tags">
         ${r.estimated ? '<span class="rc-tag estimated">Macros estimated</span>' : ''}
-        ${(r.tags||[]).map(t=>`<span class="rc-tag">${t}</span>`).join('')}
+        ${(r.tags||[]).map(t=>`<span class="rc-tag">${escapeHtml(t)}</span>`).join('')}
       </div>
       <div class="rc-actions" onclick="event.stopPropagation()">
         <button class="rc-btn rc-btn-primary" onclick="openRecipeBuilder('${r.id}')">✎ Edit</button>
@@ -4268,14 +4248,14 @@ function openRecipeView(recipeId) {
     `<div style="font-size:12px;color:var(--text3);">Macros not set — edit recipe to add them.</div>`;
 
   document.getElementById('rv-ingredients').innerHTML =
-    (r.ingredients||[]).map(i=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">• ${i}</div>`).join('') ||
+    (r.ingredients||[]).map(i=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">• ${escapeHtml(i)}</div>`).join('') ||
     '<em style="color:var(--text3);">None recorded</em>';
 
   document.getElementById('rv-instructions').innerHTML =
-    (r.instructions||[]).map((s,i)=>`<div style="margin-bottom:10px;"><b>Step ${i+1}.</b> ${s}</div>`).join('') ||
+    (r.instructions||[]).map((s,i)=>`<div style="margin-bottom:10px;"><b>Step ${i+1}.</b> ${escapeHtml(s)}</div>`).join('') ||
     '<em style="color:var(--text3);">None recorded</em>';
 
-  document.getElementById('recipe-view-modal').classList.add('open');
+  openModalById('recipe-view-modal');
 }
 
 // ── ADD RECIPE TO MEAL ────────────────────────────────────────────────────────
@@ -4331,8 +4311,7 @@ function deleteRecipeFromView() {
   toast('Recipe deleted');
 }
 
-// ── PATCH BUILDER TO HANDLE RECIPE ITEMS ─────────────────────────────────────
-// Override calcMealMacros to include recipe items
+// ── Meal builder (foods + recipe items) ──────────────────────────────────────
 function calcMealMacros() {
   let kcal = 0, protein = 0, carbs = 0, fat = 0;
   state.currentMeal.forEach(item => {
@@ -4355,7 +4334,6 @@ function calcMealMacros() {
   return { kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat) };
 }
 
-// ── PATCH addFoodToMeal TO USE SMART PORTIONING ───────────────────────────────
 function addFoodToMeal(foodId) {
   if (foodPickerTarget === 'recipe') { recipeBuildAddFood(foodId); return; }
   const qty = 1; // always start at 1 serving; the user adjusts from there
@@ -4370,9 +4348,6 @@ function addFoodToMeal(foodId) {
   toast(`Added · ${qty} serving${qty !== 1 ? 's' : ''}`);
 }
 
-// ── PATCH renderBuilder TO SHOW RECIPE ITEMS ─────────────────────────────────
-// We need to extend the meal-items renderer to handle recipeId items too
-const _origRenderBuilder = renderBuilder;
 function renderBuilder() {
   updateTargetDisplay();
   updateMealEditUI();
@@ -4415,7 +4390,7 @@ function renderBuilder() {
       return `<div class="meal-item">
         <span class="mi-emoji">📄</span>
         <div class="mi-info">
-          <div class="mi-name">${r.name}</div>
+          <div class="mi-name">${escapeHtml(r.name)}</div>
           <div class="mi-macros">${qtyLabel} · ${itemKcal} cal · ${itemP}g P · ${itemC}g C · ${itemF}g F
             ${r.estimated ? ' <span style="font-size:9px;color:var(--fat);">est.</span>' : ''}
           </div>
@@ -4433,7 +4408,7 @@ function renderBuilder() {
       return `<div class="meal-item">
         <span class="mi-emoji">${foodIcon(f, 24)}</span>
         <div class="mi-info">
-          <div class="mi-name">${f.name}</div>
+          <div class="mi-name">${escapeHtml(f.name)}</div>
           <div class="mi-macros">${Math.round(f.kcal * item.qty)} cal · ${Math.round(f.protein * item.qty)}g P · ${Math.round(f.carbs * item.qty)}g C · ${Math.round(f.fat * item.qty)}g F</div>
         </div>
         <div class="mi-qty">
@@ -4447,15 +4422,12 @@ function renderBuilder() {
   }).join('');
 }
 
-// ── PATCH adjustQty for finer recipe steps ───────────────────────────────────
 function adjustQty(i, delta) {
-  const item = state.currentMeal[i];
-  const step = item.recipeId ? 0.5 : 0.5;
-  item.qty = Math.max(0.5, Math.round((item.qty + delta * step) * 4) / 4);
+  const item = state.currentMeal[i]; if (!item) return;
+  item.qty = Math.max(0.5, Math.round((item.qty + delta * 0.5) * 4) / 4);
   renderBuilder();
 }
 
-// ── PATCH saveMeal to capture recipe items in macro snapshot ─────────────────
 function saveMeal() {
   if (state.currentMeal.length === 0) { toast('Add some foods first'); return; }
   const name = document.getElementById('meal-name-input').value.trim() || 'Meal ' + (state.savedMeals.length + 1);
@@ -4529,8 +4501,8 @@ function syncSlotMeal(key, slot) {
   saveState();
 }
 
-// ── PATCH openMealAssign to show recipes in planner picker ───────────────────
-// (recipes usable as meals directly in planner)
+// ── Planner: assign a saved meal or recipe to a slot ─────────────────────────
+let assignTarget = null;
 function openMealAssign(dk, slotName) {
   assignTarget = { dateKey: dk, slotName };
   document.getElementById('meal-assign-title').textContent = `Assign to ${slotName}`;
@@ -4545,7 +4517,7 @@ function openMealAssign(dk, slotName) {
       <div class="food-pick-item" onclick="assignMeal('${meal.id}', 'meal')">
         <span class="fpi-emoji">🍽️</span>
         <div class="fpi-info">
-          <div class="fpi-name">${meal.name}</div>
+          <div class="fpi-name">${escapeHtml(meal.name)}</div>
           <div class="fpi-macros">${meal.kcal} cal · P:${meal.protein}g C:${meal.carbs}g F:${meal.fat}g</div>
         </div>
         <span class="fpi-add">+</span>
@@ -4555,7 +4527,7 @@ function openMealAssign(dk, slotName) {
       <div class="food-pick-item" onclick="assignMeal('${r.id}', 'recipe')" style="border-left:3px solid var(--fat);">
         <span class="fpi-emoji">📄</span>
         <div class="fpi-info">
-          <div class="fpi-name">${r.name}</div>
+          <div class="fpi-name">${escapeHtml(r.name)}</div>
           <div class="fpi-macros">${r.kcal ? r.kcal + ' cal/serving' : 'Macros not set'}${r.estimated ? ' · est.' : ''}</div>
         </div>
         <span class="fpi-add">+</span>
@@ -4568,7 +4540,7 @@ function openMealAssign(dk, slotName) {
         <div class="fpi-info"><div class="fpi-name">Clear this slot</div></div>
       </div>`;
   }
-  document.getElementById('meal-assign-modal').classList.add('open');
+  openModalById('meal-assign-modal');
 }
 
 function assignMeal(id, type) {
@@ -4582,7 +4554,6 @@ function assignMeal(id, type) {
   renderPlanner();
 }
 
-// Patch getMealMacrosById to also handle recipe-type slots
 function getMealMacrosById(mealId, mealType) {
   if (mealType === 'recipe') {
     const r = state.recipes.find(r => r.id === mealId);
@@ -4593,15 +4564,6 @@ function getMealMacrosById(mealId, mealType) {
   if (!meal) return { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   return { kcal: meal.kcal, protein: meal.protein, carbs: meal.carbs, fat: meal.fat };
 }
-
-// ════════════════════════════════════════ INIT ════════════════════════════════
-loadState();
-loadMFPData();
-loadSettingsUI();
-buildQueue();
-renderSwipeCard();
-updateTargetDisplay();
-renderMFPSummary();
 
 // ════════════════════════════════════════════════════════════════════════════
 //  DIARY / TRACKER · BARCODE SCAN · FITBIT · RECOMMENDATIONS · PWA
@@ -4622,6 +4584,7 @@ function ensureDataModel() {
   if (!state.inventory) state.inventory = []; // [ { id, name, qty, unit, bestBy, low } ]  pantry / best-by tracking
   if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
+  if (state.settings && !state.settings.theme) state.settings.theme = 'auto';
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
   if (!state.nutritionix) state.nutritionix = { appId: '', appKey: '' }; // restaurant / branded menus (optional)
@@ -4651,7 +4614,33 @@ function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function fmtQty(q) { return Number.isInteger(q) ? String(q) : String(Math.round(q * 100) / 100); }
-function openModalById(id) { document.getElementById(id).classList.add('open'); }
+// ── Modals / sheets ──────────────────────────────────────────────────────────
+// Every overlay opens and closes through these helpers: the page behind stops
+// scrolling, Escape closes the top-most sheet, and the camera is released when
+// the scanner closes.
+function openModalById(id) {
+  const el = document.getElementById(id); if (!el) return;
+  el.classList.add('open');
+  document.body.classList.add('modal-open');
+}
+function closeModal(id) {
+  const el = document.getElementById(id); if (!el) return;
+  if (id === 'scanner-modal') stopScan();
+  el.classList.remove('open');
+  if (!document.querySelector('.modal-overlay.open, .overlay.open')) document.body.classList.remove('modal-open');
+}
+function closeTopModal() {
+  const open = [...document.querySelectorAll('.modal-overlay.open, .overlay.open')];
+  if (!open.length) return false;
+  open.sort((a, b) => (parseInt(getComputedStyle(b).zIndex, 10) || 0) - (parseInt(getComputedStyle(a).zIndex, 10) || 0));
+  if (open[0].id === 'settings-overlay') closeSettings(); else closeModal(open[0].id);
+  return true;
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && closeTopModal()) e.preventDefault(); });
+// Keyboard activation for generated list rows that act as buttons.
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.matches('[role="button"]:not(button):not(a)')) { e.preventDefault(); e.target.click(); }
+});
 function defaultSlot() { const h = new Date().getHours(); if (h < 11) return 'Breakfast'; if (h < 16) return 'Lunch'; if (h < 21) return 'Dinner'; return 'Snacks'; }
 
 // ── Diary rendering ──────────────────────────────────────────────────────────
@@ -4866,7 +4855,7 @@ function logSourceTab(which, el) {
 function pickRow(onclick, emoji, name, macros) {
   return `<div class="food-pick-item" onclick="${onclick}">
     <span class="fpi-emoji">${emoji}</span>
-    <div class="fpi-info"><div class="fpi-name">${escapeHtml(name)}</div><div class="fpi-macros">${macros}</div></div>
+    <div class="fpi-info"><div class="fpi-name">${escapeHtml(name)}</div><div class="fpi-macros">${escapeHtml(macros)}</div></div>
     <span class="fpi-add">+</span></div>`;
 }
 let offSearchTimer = null, offSearchSeq = 0;
@@ -5347,7 +5336,7 @@ async function lookupBarcode(code) {
     const p = j.product, n = p.nutriments || {};
     const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
     const basis = perServing ? '_serving' : '_100g';
-    const kcal = Math.round(num(n['energy-kcal' + basis]) || num(n['energy-kcal_100g']));
+    const kcal = Math.round(offKcalFrom(n, basis)); // kcal, or kJ ÷ 4.184 when that's all the label has
     const protein = Math.round(num(n['proteins' + basis]));
     const carbs = Math.round(num(n['carbohydrates' + basis]));
     const fat = Math.round(num(n['fat' + basis]));
@@ -5392,7 +5381,7 @@ function showScanResult(p) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="scan-product">
-      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
@@ -5404,7 +5393,7 @@ function showScanWillEat(p) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="scan-product">
-      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
@@ -5421,7 +5410,7 @@ function showScanRecipe(p) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="scan-product">
-      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
@@ -5920,7 +5909,7 @@ function mergeCloudInto(cloud) {
   state.hydration = mergeDaily(state.hydration, cloud.hydration);
   state.inventory = unionById(state.inventory, cloud.inventory).filter(x => !tombed('inv:' + x.id));
   state.foodOverrides = { ...(cloud.foodOverrides || {}), ...(state.foodOverrides || {}) };
-  _origSaveState();
+  persistLocal();
 }
 async function pushCloud() {
   if (!sbAuthed()) return;
@@ -5953,7 +5942,7 @@ async function pullSteps() {
     const rows = await r.json();
     ensureDataModel();
     rows.forEach(row => { state.healthDaily[row.day] = { steps: row.steps, source: row.source, syncedAt: Date.now() }; });
-    _origSaveState();
+    persistLocal();
   } catch (e) {}
 }
 async function ensureIngestToken() {
@@ -5964,7 +5953,7 @@ async function ensureIngestToken() {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ token, user_id: state.sync.userId })
     });
-    if (r.ok || r.status === 201) { state.sync.ingestToken = token; _origSaveState(); }
+    if (r.ok || r.status === 201) { state.sync.ingestToken = token; persistLocal(); }
   } catch (e) {}
 }
 let _syncing = false;
@@ -6559,7 +6548,7 @@ function openRecommend() {
         <span class="ri-emoji">${icon}</span>
         <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
           <div class="ri-why">${recWhy(f, sec.ctx)}</div>
-          <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
+          <div class="ri-macros">${escapeHtml(f.serving)} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
         <span class="ri-add">＋</span></div>`;
     }).join('');
   });
@@ -6697,46 +6686,7 @@ function recWhy(f, ctx) {
   return parts.length ? parts.join(' · ') : 'Helps round out your nutrients';
 }
 
-// ── Override navigation / overlays to wire in the new screens ────────────────
-switchTab = function (id, el) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-  const scr = document.getElementById('screen-' + id); if (scr) scr.classList.add('active');
-  if (el) el.classList.add('active');
-  if (id === 'today') renderDiary();
-  else if (id === 'foods') foodsEntry();
-  else if (id === 'builder') renderBuilder();
-  else if (id === 'planner') renderPlanner();
-  else if (id === 'history') renderHistory();
-  window.scrollTo(0, 0);
-};
-const _origOverlayClick = overlayClick;
-overlayClick = function (e, id) {
-  if (e.target === document.getElementById(id)) {
-    if (id === 'scanner-modal') stopScan();
-    document.getElementById(id).classList.remove('open');
-  }
-};
-const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); renderNutritionixSettings(); };
-const _origRenderHistory = renderHistory;
-renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyByTime(); renderEnergyInsights(); };
 
-// Every local save also schedules a debounced push to the cloud (when signed in).
-const _origSaveState = saveState;
-let _cloudPushTimer = null;
-saveState = function () {
-  _origSaveState();
-  if (sbAuthed()) {
-    if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
-    _cloudPushTimer = setTimeout(() => { _cloudPushTimer = null; pushCloud(); }, 2500);
-  }
-};
-const _origCloseSettings = closeSettings;
-closeSettings = function () {
-  _origCloseSettings();
-  if (document.getElementById('screen-today').classList.contains('active')) renderDiary();
-};
 
 // ── PWA service worker ───────────────────────────────────────────────────────
 const APP_VERSION = 'v86 · 2026-07-12';
@@ -6777,8 +6727,15 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ── Boot the tracker layer ───────────────────────────────────────────────────
+// ── Boot ─────────────────────────────────────────────────────────────────────
+loadState();
+loadMFPData();
 ensureDataModel();
+applyTheme();
+loadSettingsUI();
+buildQueue();
+renderSwipeCard();
+renderMFPSummary();
 renderSyncSettings();
 renderGoogleHealthSettings();
 renderDiary();

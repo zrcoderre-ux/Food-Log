@@ -1,0 +1,35 @@
+name: Smoke test
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]   # main is covered by the deploy workflow's PR gate
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Syntax-check the app script and service worker
+        run: |
+          node -e "const s=require('fs').readFileSync('index.html','utf8');const m=s.match(/<script>\n(\/\/ ═+[\s\S]*?)<\/script>\n<\/body>/);require('fs').writeFileSync('/tmp/app.js',m[1]);"
+          node --check /tmp/app.js
+          node --check sw.js
+      - name: Run smoke test
+        run: npm test
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshots
+          path: tools/smoke-out/
+          if-no-files-found: ignore

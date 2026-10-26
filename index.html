@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="PlateIQ">
@@ -13,6 +14,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script>
+// Apply the saved appearance before first paint so a dark-mode user never sees a white flash.
+(function () { try { var s = JSON.parse(localStorage.getItem('plateiq_v1') || '{}'); var t = s.settings && s.settings.theme; if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <style>
@@ -33,13 +38,55 @@
   --carb-light: #E8EAF6;
   --fat: #E6920A;
   --fat-light: #FEF3DC;
+  --on-accent: #FFFFFF;
+  --water: #3AA6E0;
+  --water-bg: #EAF6FC;
+  --water-border: #BFE3F5;
+  --water-text: #0C5A86;
+  --alert-bg: #FFF4E5;
+  --alert-border: #F5C77E;
+  --alert-text: #8A5A00;
+  --overlay: rgba(26,23,20,0.5);
+  --toast-bg: #1A1714;
+  --toast-text: #FFFFFF;
   --radius: 14px;
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  --tab-h: 62px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+/* Dark scheme: follows the OS unless the user picks Light/Dark in Settings. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #131514; --surface: #1C1F1E; --surface2: #262A28; --border: #343936;
+    --text: #ECEAE4; --text2: #ABB0AB; --text3: #767C77;
+    --accent: #5FB88E; --accent-light: #1E3A2D; --accent-text: #A8E2C3; --on-accent: #0D1F16;
+    --warn: #F2865D; --warn-light: #3B2419;
+    --carb: #94A0E8; --carb-light: #262B46; --fat: #F2AE45; --fat-light: #3B2E15;
+    --water: #5CB9EA; --water-bg: #1B2E39; --water-border: #2A4A5C; --water-text: #9AD4F3;
+    --alert-bg: #3A2D14; --alert-border: #6B5424; --alert-text: #F3D08A;
+    --overlay: rgba(0,0,0,0.62); --toast-bg: #ECEAE4; --toast-text: #1A1714;
+    --shadow: 0 1px 3px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.35);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131514; --surface: #1C1F1E; --surface2: #262A28; --border: #343936;
+  --text: #ECEAE4; --text2: #ABB0AB; --text3: #767C77;
+  --accent: #5FB88E; --accent-light: #1E3A2D; --accent-text: #A8E2C3; --on-accent: #0D1F16;
+  --warn: #F2865D; --warn-light: #3B2419;
+  --carb: #94A0E8; --carb-light: #262B46; --fat: #F2AE45; --fat-light: #3B2E15;
+  --water: #5CB9EA; --water-bg: #1B2E39; --water-border: #2A4A5C; --water-text: #9AD4F3;
+  --alert-bg: #3A2D14; --alert-border: #6B5424; --alert-text: #F3D08A;
+  --overlay: rgba(0,0,0,0.62); --toast-bg: #ECEAE4; --toast-text: #1A1714;
+  --shadow: 0 1px 3px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.35);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-
+html { background: var(--bg); }
 body {
   font-family: 'DM Sans', sans-serif;
   background: var(--bg);
@@ -49,13 +96,27 @@ body {
   margin: 0 auto;
   position: relative;
   overflow-x: hidden;
+  padding-bottom: calc(var(--tab-h) + var(--safe-bottom));
+  -webkit-font-smoothing: antialiased;
+}
+body.modal-open { overflow: hidden; }
+/* Buttons inherit the app's type and colour; each component sets its own box. */
+button { font-family: inherit; font-size: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; }
+/* Inputs at 16px: below that iOS zooms the page on focus. */
+input, select, textarea { font-family: inherit; font-size: 16px; color: var(--text); }
+input::placeholder, textarea::placeholder { color: var(--text3); opacity: 1; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tab-btn:focus-visible, .foods-tab:focus-visible, .log-source-tab:focus-visible { outline-offset: -2px; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
 /* ── TOP BAR ── */
 .top-bar {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 14px 18px 12px;
+  padding: calc(12px + var(--safe-top)) 18px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -71,49 +132,54 @@ body {
 }
 .app-name em { color: var(--accent); font-style: italic; }
 .settings-icon {
-  width: 36px; height: 36px;
+  width: 38px; height: 38px;
   border-radius: 50%;
   background: var(--surface2);
   border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  font-size: 16px;
+  color: var(--text2);
   transition: background 0.15s;
 }
 .settings-icon:active { background: var(--border); }
+.settings-icon svg { width: 20px; height: 20px; }
+.icon { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
 
-/* ── TAB BAR ── */
+/* ── TAB BAR (bottom, thumb reach) ── */
 .tab-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  max-width: 430px;
+  margin: 0 auto;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   display: flex;
-  position: sticky;
-  top: 61px;
-  z-index: 40;
+  padding-bottom: var(--safe-bottom);
+  z-index: 60;
 }
 .tab-btn {
   flex: 1;
-  padding: 10px 4px 9px;
-  text-align: center;
-  cursor: pointer;
-  font-size: 11px;
+  height: var(--tab-h);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--text3);
-  border-bottom: 2.5px solid transparent;
-  transition: all 0.15s;
   letter-spacing: 0.02em;
+  transition: color 0.15s;
+  border-radius: 10px;
 }
-.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-.tab-icon { font-size: 19px; display: block; margin-bottom: 2px; }
+.tab-btn .icon { width: 24px; height: 24px; stroke-width: 1.8; }
+.tab-btn.active { color: var(--accent); }
+.tab-btn.active .icon { stroke-width: 2.2; }
+.tab-btn:active { color: var(--accent); }
 
 /* ── SCREENS ── */
-.screen { display: none; padding-bottom: 32px; min-height: calc(100dvh - 120px); }
+.screen { display: none; padding-bottom: 24px; min-height: 60dvh; }
 .screen.active { display: block; }
 
 /* ── SETTINGS OVERLAY ── */
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(26,23,20,0.5);
+  background: var(--overlay);
   z-index: 100;
   display: none;
   align-items: flex-start;
@@ -126,12 +192,14 @@ body {
   height: 100dvh;
   background: var(--surface);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: slideIn 0.22s ease;
+  padding-bottom: var(--safe-bottom);
 }
 @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
 
 .drawer-header {
-  padding: 18px 18px 14px;
+  padding: calc(16px + var(--safe-top)) 18px 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -143,14 +211,14 @@ body {
 }
 .drawer-title { font-size: 17px; font-weight: 600; }
 .drawer-close {
-  width: 30px; height: 30px;
+  width: 32px; height: 32px;
   border-radius: 50%;
   background: var(--surface2);
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
+  color: var(--text2);
+  font-size: 15px;
   display: flex; align-items: center; justify-content: center;
 }
+.drawer-close:active { background: var(--border); }
 
 .settings-section { padding: 16px 18px 0; }
 .settings-section + .settings-section { padding-top: 20px; border-top: 1px solid var(--border); margin-top: 20px; }
@@ -171,38 +239,36 @@ body {
 }
 .settings-row:last-child { border-bottom: none; }
 .settings-row label { font-size: 14px; color: var(--text); }
-.settings-row input[type="number"] {
-  width: 72px;
+.settings-row input[type="number"], .settings-row input[type="text"], .settings-row input[type="email"] {
+  width: 84px;
   text-align: right;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 5px 8px;
-  font-size: 14px;
-  font-family: 'DM Sans', sans-serif;
+  padding: 6px 8px;
   background: var(--surface2);
   color: var(--text);
+  min-width: 0;
 }
+.settings-row input[type="text"], .settings-row input[type="email"] { text-align: left; }
 .settings-row select {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 5px 8px;
-  font-size: 14px;
-  font-family: 'DM Sans', sans-serif;
+  padding: 6px 8px;
   background: var(--surface2);
   color: var(--text);
+  max-width: 64%;
 }
+.settings-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
 
 .chip-group { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .chip {
-  padding: 5px 13px;
+  padding: 6px 13px;
   border-radius: 999px;
   border: 1px solid var(--border);
   font-size: 12px;
-  cursor: pointer;
   color: var(--text2);
   background: var(--surface);
   transition: all 0.12s;
-  font-family: 'DM Sans', sans-serif;
 }
 .chip.active { background: var(--accent-light); color: var(--accent-text); border-color: var(--accent); font-weight: 500; }
 
@@ -223,10 +289,8 @@ body {
   border-radius: var(--radius-sm);
   padding: 10px 6px;
   text-align: center;
-  cursor: pointer;
   font-size: 11px;
   font-weight: 500;
-  font-family: 'DM Sans', sans-serif;
   color: var(--text2);
   transition: background 0.12s;
 }
@@ -328,7 +392,6 @@ body {
   border: 2px solid;
   display: flex; align-items: center; justify-content: center;
   font-size: 24px;
-  cursor: pointer;
   background: var(--surface);
   transition: transform 0.12s, box-shadow 0.12s;
   box-shadow: var(--shadow);
@@ -344,7 +407,7 @@ body {
 .foods-tabs { display: flex; gap: 0; background: var(--surface2); border-radius: 999px; padding: 3px; margin: 0 16px 12px; }
 .foods-tab {
   flex: 1; text-align: center; padding: 7px 4px; border-radius: 999px;
-  font-size: 12px; font-weight: 500; cursor: pointer; color: var(--text2);
+  font-size: 12px; font-weight: 500; color: var(--text2);
   transition: all 0.15s;
 }
 .foods-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
@@ -371,12 +434,13 @@ body {
 .badge-yes { background: var(--accent-light); color: var(--accent-text); }
 .badge-no { background: var(--warn-light); color: var(--warn); }
 .fli-snack { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text3); cursor: pointer; user-select: none; white-space: nowrap; }
-.fli-snack input { width: 16px; height: 16px; margin: 0; }
+.fli-snack input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.badge-auto { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
 
 /* Custom food modal */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(26,23,20,0.5);
+  background: var(--overlay);
   z-index: 200;
   display: none;
   align-items: flex-end;
@@ -386,11 +450,12 @@ body {
 .modal {
   background: var(--surface);
   border-radius: 22px 22px 0 0;
-  padding: 20px 20px 36px;
+  padding: 20px 20px calc(24px + var(--safe-bottom));
   width: 100%;
   max-width: 430px;
-  max-height: 92vh;
+  max-height: 92dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   animation: slideUp 0.22s ease;
 }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -404,7 +469,7 @@ body {
 #log-food-modal .modal > button { flex-shrink: 0; }
 #log-recent { margin: 4px 0 8px; }
 .log-recent-head { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); margin-bottom: 6px; }
-.log-recent-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px; background: var(--surface2); border: 1px solid var(--accent); border-radius: var(--radius-sm); cursor: pointer; }
+.log-recent-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 6px; background: var(--surface2); border: 1px solid var(--accent); border-radius: var(--radius-sm); cursor: pointer; width: 100%; text-align: left; }
 .log-recent-item:active { background: var(--accent-light); }
 .log-recent-item .lri-main { flex: 1; min-width: 0; }
 .log-recent-item .lri-names { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -412,31 +477,37 @@ body {
 .log-recent-item .lri-add { font-size: 18px; color: var(--accent); }
 .form-group { margin-bottom: 13px; }
 .form-group label { font-size: 12px; color: var(--text2); display: block; margin-bottom: 5px; font-weight: 500; }
-.form-group input {
+.form-group input, .form-group select, .form-group textarea, .field {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 9px 12px;
-  font-size: 14px;
-  font-family: 'DM Sans', sans-serif;
   background: var(--surface2);
   color: var(--text);
 }
+.form-group input[type="checkbox"] { width: 20px; height: 20px; padding: 0; accent-color: var(--accent); }
+textarea.field { resize: none; line-height: 1.45; }
+/* Shared text styles that used to be repeated inline. */
+.note { font-size: 12px; color: var(--text2); margin-bottom: 10px; line-height: 1.5; }
+.note b { color: var(--text); }
+.note-sm { font-size: 11px; color: var(--text3); line-height: 1.45; }
+.link-btn { font-size: 13px; color: var(--accent); font-weight: 500; padding: 4px 2px; }
+.link-btn:active { opacity: 0.7; }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.today-pill { display: block; margin: 0 auto 8px; font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-light); border-radius: 999px; padding: 5px 12px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 .btn-primary {
   width: 100%;
   background: var(--accent);
-  color: white;
-  border: none;
+  color: var(--on-accent);
   border-radius: var(--radius);
   padding: 13px;
   font-size: 15px;
   font-weight: 600;
-  font-family: 'DM Sans', sans-serif;
-  cursor: pointer;
   margin-top: 4px;
 }
 .btn-primary:active { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.55; cursor: default; }
 .btn-secondary {
   width: 100%;
   background: var(--surface2);
@@ -446,10 +517,10 @@ body {
   padding: 11px;
   font-size: 14px;
   font-weight: 500;
-  font-family: 'DM Sans', sans-serif;
-  cursor: pointer;
   margin-top: 8px;
 }
+.btn-secondary:active { background: var(--border); }
+.btn-danger { color: var(--warn); border-color: var(--warn); }
 
 /* ── MEAL BUILDER ── */
 .builder-wrap { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
@@ -494,24 +565,21 @@ body {
 .meal-name-row { display: flex; gap: 8px; align-items: center; }
 .meal-name-input {
   flex: 1;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 8px 12px;
-  font-size: 14px;
-  font-family: 'DM Sans', sans-serif;
   background: var(--surface2);
   color: var(--text);
 }
 .save-meal-btn {
   background: var(--accent);
-  color: white;
-  border: none;
+  color: var(--on-accent);
   border-radius: var(--radius-sm);
-  padding: 8px 14px;
+  padding: 9px 14px;
   font-size: 13px;
   font-weight: 600;
-  cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
+  white-space: nowrap;
 }
 
 .meal-items { display: flex; flex-direction: column; gap: 7px; }
@@ -530,21 +598,19 @@ body {
 .mi-macros { font-size: 11px; color: var(--text3); }
 .mi-qty { display: flex; align-items: center; gap: 6px; }
 .qty-btn {
-  width: 24px; height: 24px;
+  width: 28px; height: 28px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--surface2);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text2);
 }
-.qty-val { font-size: 12px; font-weight: 500; min-width: 16px; text-align: center; }
+.qty-val { font-size: 12px; font-weight: 500; min-width: 18px; text-align: center; }
 .mi-remove {
   color: var(--text3);
-  cursor: pointer;
   font-size: 16px;
-  padding: 2px 4px;
+  padding: 6px;
 }
 .mi-remove:active { color: var(--warn); }
 
@@ -557,10 +623,8 @@ body {
   border-radius: var(--radius);
   color: var(--text3);
   font-size: 13px;
-  cursor: pointer;
   background: transparent;
   width: 100%;
-  font-family: 'DM Sans', sans-serif;
   transition: border-color 0.15s, color 0.15s;
 }
 .add-food-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -571,8 +635,6 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
-  font-size: 14px;
-  font-family: 'DM Sans', sans-serif;
   background: var(--surface2);
   color: var(--text);
   margin-bottom: 12px;
@@ -586,6 +648,8 @@ body {
   cursor: pointer;
   background: var(--surface2);
   transition: background 0.12s;
+  text-align: left;
+  width: 100%;
 }
 .food-pick-item:active { background: var(--accent-light); }
 .fpi-emoji { font-size: 20px; width: 28px; text-align: center; }
@@ -601,10 +665,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 14px;
-  cursor: pointer;
-  transition: border-color 0.15s;
 }
-.saved-meal-card:active { border-color: var(--accent); }
 .smc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .smc-name { font-size: 14px; font-weight: 600; }
 .smc-cals { font-size: 13px; color: var(--text2); }
@@ -612,24 +673,27 @@ body {
 .smc-actions { display: flex; gap: 6px; }
 .smc-use {
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
   background: var(--accent-light);
   color: var(--accent-text);
-  cursor: pointer;
-  border: none;
-  font-family: 'DM Sans', sans-serif;
   font-weight: 500;
 }
 .smc-del {
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
   background: var(--warn-light);
   color: var(--warn);
-  cursor: pointer;
-  border: none;
-  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+}
+.smc-log {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text2);
+  border: 1px solid var(--border);
   font-weight: 500;
 }
 
@@ -639,15 +703,16 @@ body {
 .week-header { display: flex; align-items: center; justify-content: space-between; }
 .week-nav { display: flex; align-items: center; gap: 10px; }
 .week-nav-btn {
-  width: 30px; height: 30px;
+  width: 34px; height: 34px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--surface);
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text2);
 }
+.week-nav-btn:active { background: var(--surface2); }
+.week-export { border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: 12px; color: var(--text2); font-weight: 500; background: var(--surface); }
 .week-label { font-size: 14px; font-weight: 600; }
 
 .week-summary-card {
@@ -658,6 +723,7 @@ body {
 }
 .ws-title { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text3); margin-bottom: 10px; }
 .ws-macros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ws-macros > :only-child:not(.ws-macro) { grid-column: 1 / -1; }
 .ws-macro { text-align: center; }
 .ws-val { font-size: 16px; font-weight: 600; }
 .ws-lbl { font-size: 9px; color: var(--text3); }
@@ -701,13 +767,11 @@ body {
 .dmr-cals { font-size: 11px; color: var(--text2); flex-shrink: 0; }
 .dmr-assign {
   font-size: 11px;
-  padding: 3px 9px;
+  padding: 4px 9px;
   border-radius: 999px;
   background: var(--surface2);
   border: 1px solid var(--border);
-  cursor: pointer;
   color: var(--text2);
-  font-family: 'DM Sans', sans-serif;
 }
 
 .empty-day {
@@ -724,20 +788,25 @@ body {
 /* ── TOASTS ── */
 .toast {
   position: fixed;
-  bottom: 24px;
+  bottom: calc(var(--tab-h) + var(--safe-bottom) + 14px);
   left: 50%;
-  transform: translateX(-50%) translateY(80px);
-  background: var(--text);
-  color: white;
-  padding: 10px 20px;
+  transform: translateX(-50%) translateY(90px);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  padding: 10px 18px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
   z-index: 500;
-  transition: transform 0.25s ease;
-  white-space: nowrap;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+  line-height: 1.35;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
 }
-.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
 /* ── EMPTY STATES ── */
 .empty-state {
@@ -768,7 +837,7 @@ body {
 .rc-tag { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
 .rc-tag.estimated { background: var(--fat-light); color: var(--fat); border-color: var(--fat); }
 .rc-actions { display: flex; gap: 6px; margin-top: 8px; }
-.rc-btn { font-size: 11px; padding: 4px 10px; border-radius: 999px; border: none; cursor: pointer; font-family: 'DM Sans',sans-serif; font-weight: 500; }
+.rc-btn { font-size: 11px; padding: 5px 10px; border-radius: 999px; font-weight: 500; }
 .rc-btn-primary { background: var(--accent-light); color: var(--accent-text); }
 .rc-btn-secondary { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
 
@@ -789,7 +858,8 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 16px 6px;
 }
-.diary-date { text-align: center; cursor: pointer; line-height: 1.15; }
+.diary-date { text-align: center; line-height: 1.15; padding: 4px 10px; border-radius: 10px; }
+.diary-date:active { background: var(--surface2); }
 .diary-date #diary-date-label { display: block; font-size: 16px; font-weight: 600; color: var(--text); }
 .diary-date #diary-date-sub { display: block; font-size: 11px; color: var(--text3); }
 
@@ -835,17 +905,19 @@ body {
 .hydro-total { font-size: 13px; color: var(--text2); font-variant-numeric: tabular-nums; }
 .hydro-total b { color: var(--text); font-size: 15px; }
 .hydro-bar { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
-.hydro-fill { height: 100%; background: #3AA6E0; border-radius: 4px; transition: width 0.3s ease; }
+.hydro-fill { height: 100%; background: var(--water); border-radius: 4px; transition: width 0.3s ease; }
 .hydro-btns { display: flex; gap: 8px; }
-.hydro-btns button { flex: 1; background: #EAF6FC; border: 1px solid #BFE3F5; color: #0C5A86; border-radius: var(--radius-sm); padding: 8px 4px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600; cursor: pointer; }
+.hydro-btns button { flex: 1; background: var(--water-bg); border: 1px solid var(--water-border); color: var(--water-text); border-radius: var(--radius-sm); padding: 8px 4px; font-size: 12px; font-weight: 600; }
 .hydro-btns button span { display: block; font-size: 10px; font-weight: 400; opacity: 0.8; }
-.hydro-btns button:active { background: #BFE3F5; }
+.hydro-btns button:active { background: var(--water-border); }
 .hydro-btns .hydro-undo { flex: 0 0 44px; font-size: 18px; color: var(--text2); background: var(--surface2); border-color: var(--border); }
-@media (prefers-color-scheme: dark) { .hydro-btns button { background: rgba(58,166,224,0.15); border-color: rgba(58,166,224,0.35); color: #7Fc7ea; } }
+.hydro-total { padding: 2px 6px; border-radius: 6px; }
+.hydro-total:active { background: var(--surface2); }
+.inv-alert { display: block; width: 100%; text-align: left; margin: 0 16px 12px; width: calc(100% - 32px); background: var(--alert-bg); border: 1px solid var(--alert-border); color: var(--alert-text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; line-height: 1.5; }
 .diary-actions { display: flex; gap: 10px; padding: 0 16px 14px; }
 .diary-action {
   flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 11px 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500;
+  padding: 11px 8px; font-size: 13px; font-weight: 500;
   color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
   transition: background 0.15s;
 }
@@ -856,10 +928,10 @@ body {
 /* Claude assistant (label reading + describe/photo logging) */
 .claude-status { font-size: 12px; line-height: 1.5; border-radius: var(--radius-sm); padding: 9px 12px; margin: 8px 0; background: var(--surface2); color: var(--text2); }
 .claude-status.ok { background: var(--accent-light); color: var(--accent-text); }
-.claude-status.warn { background: #FFF4E5; color: #8A5A00; }
+.claude-status.warn { background: var(--alert-bg); color: var(--alert-text); }
 .claude-status.busy::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: claude-spin 0.8s linear infinite; vertical-align: -1px; }
 @keyframes claude-spin { to { transform: rotate(360deg); } }
-.cl-text { width: 100%; min-height: 84px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); resize: vertical; }
+.cl-text { width: 100%; min-height: 84px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 16px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); resize: vertical; }
 .cl-photo-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 10px 0 12px; }
 .cl-label-head { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
 .cl-photo-btns { display: flex; gap: 8px; margin-bottom: 4px; }
@@ -874,9 +946,9 @@ body {
 .cl-sub { font-size: 11px; color: var(--text3); line-height: 1.45; margin-top: 2px; }
 .cl-badge { display: inline-block; font-size: 10px; font-weight: 600; border-radius: 6px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; background: var(--surface2); color: var(--text2); }
 .cl-badge.mine { background: var(--accent-light); color: var(--accent-text); }
-.cl-badge.low { background: #FFF4E5; color: #8A5A00; }
+.cl-badge.low { background: var(--alert-bg); color: var(--alert-text); }
 .cl-controls { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text2); }
-.cl-controls input, .cl-controls select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 13px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); }
+.cl-controls input, .cl-controls select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 16px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); }
 .cl-controls input { width: 64px; }
 .cl-kcal { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .cl-total { font-size: 13px; color: var(--text2); margin: 10px 0; }
@@ -902,12 +974,11 @@ body {
 .diary-entry .de-name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diary-entry .de-sub { font-size: 11px; color: var(--text3); }
 .diary-entry .de-kcal { font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; font-weight: 500; }
-.diary-entry .de-del { color: var(--text3); font-size: 15px; cursor: pointer; padding: 2px 4px; }
+.diary-entry .de-del { color: var(--text3); font-size: 15px; padding: 6px 6px; }
 .diary-entry .de-del:active { color: var(--warn); }
 .diary-add-btn {
-  width: 100%; background: none; border: none; padding: 10px 14px; text-align: left;
-  font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--accent);
-  cursor: pointer;
+  width: 100%; padding: 11px 14px; text-align: left;
+  font-size: 12px; font-weight: 500; color: var(--accent);
 }
 .diary-add-btn:active { background: var(--surface2); }
 
@@ -915,9 +986,9 @@ body {
 .log-source-tabs, .foods-tabs.log-source-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
 .log-source-tab {
   flex: 1; text-align: center; padding: 7px 4px; font-size: 12px; font-weight: 500;
-  color: var(--text3); background: var(--surface2); border-radius: 999px; cursor: pointer;
+  color: var(--text3); background: var(--surface2); border-radius: 999px;
 }
-.log-source-tab.active { color: #fff; background: var(--accent); }
+.log-source-tab.active { color: var(--on-accent); background: var(--accent); }
 .log-db-head { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 2px 6px; }
 .log-db-head:first-child { margin-top: 2px; }
 .qty-preview {
@@ -934,12 +1005,12 @@ body {
 .qty-micro-preview .qmp-head { width: 100%; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text3); margin-bottom: 1px; }
 .qty-stepper { display: flex; align-items: center; gap: 8px; }
 .qty-stepper button {
-  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border);
-  background: var(--surface2); font-size: 20px; color: var(--text); cursor: pointer; flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface2); font-size: 20px; color: var(--text); flex-shrink: 0;
 }
 .qty-stepper input {
-  flex: 1; text-align: center; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 9px; font-size: 16px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text);
+  flex: 1; min-width: 0; text-align: center; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 9px; background: var(--surface2); color: var(--text);
 }
 .pick-macros { font-size: 11px; color: var(--text3); }
 
@@ -956,14 +1027,14 @@ body {
 .scanner-status { font-size: 12px; color: var(--text2); text-align: center; min-height: 18px; margin-bottom: 12px; }
 .scanner-manual { display: flex; gap: 8px; }
 .scanner-manual input {
-  flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
-  font-size: 14px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text);
+  flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
+  background: var(--surface2); color: var(--text);
 }
 .scan-product {
   display: flex; gap: 12px; align-items: center; background: var(--surface2);
   border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;
 }
-.scan-product img { width: 56px; height: 56px; object-fit: contain; border-radius: 8px; background: #fff; flex-shrink: 0; }
+.scan-product img { width: 56px; height: 56px; object-fit: contain; border-radius: 8px; background: var(--surface); flex-shrink: 0; }
 .scan-product .sp-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .scan-product .sp-brand { font-size: 11px; color: var(--text3); }
 
@@ -971,7 +1042,7 @@ body {
 .rec-item {
   display: flex; align-items: center; gap: 12px; padding: 11px 12px; margin-bottom: 8px;
   background: var(--surface2); border-radius: var(--radius-sm); cursor: pointer;
-  border: 1px solid transparent; transition: border-color 0.15s;
+  border: 1px solid transparent; transition: border-color 0.15s; width: 100%; text-align: left;
 }
 .rec-item:active { border-color: var(--accent); }
 .rec-item .ri-emoji { font-size: 24px; width: 30px; text-align: center; }
@@ -1024,17 +1095,17 @@ body {
 .rn-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .rn-pct { font-size: 11px; font-variant-numeric: tabular-nums; }
 .nutri-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.nutri-chip { font-size: 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; color: var(--text2); cursor: pointer; }
+.nutri-chip { font-size: 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 999px; padding: 5px 10px; color: var(--text2); }
 .nutri-chip:active { background: var(--accent-light); }
 
 /* ═══════════════ ENERGY CHECK-IN ═══════════════ */
 .energy-card { margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; }
 .energy-q { font-size: 14px; font-weight: 600; color: var(--text); text-align: center; margin-bottom: 12px; }
 .energy-btns { display: flex; gap: 8px; }
-.energy-btn { flex: 1; padding: 12px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--text); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px; transition: background 0.15s; }
+.energy-btn { flex: 1; padding: 12px 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); font-size: 12px; font-weight: 500; color: var(--text); display: flex; flex-direction: column; align-items: center; gap: 5px; transition: background 0.15s; }
 .energy-btn:active { background: var(--accent-light); }
 .energy-btn .eb-ic { font-size: 22px; }
-.energy-skip { text-align: center; font-size: 12px; color: var(--text3); margin-top: 10px; cursor: pointer; }
+.energy-skip { display: block; margin: 10px auto 0; font-size: 12px; color: var(--text3); padding: 4px 10px; }
 .insight-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text); line-height: 1.5; padding: 9px 0; border-bottom: 1px solid var(--surface2); }
 .insight-row:last-child { border-bottom: none; }
 .insight-row .in-emoji { font-size: 18px; flex-shrink: 0; }
@@ -1045,42 +1116,45 @@ body {
 <body>
 
 <!-- TOP BAR -->
-<div class="top-bar">
+<header class="top-bar">
   <div class="app-name">Plate<em>IQ</em></div>
-  <div class="settings-icon" onclick="openSettings()">⚙️</div>
-</div>
+  <button class="settings-icon" onclick="openSettings()" aria-label="Profile and settings">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+  </button>
+</header>
 
-<!-- TAB BAR -->
-<div class="tab-bar">
-  <div class="tab-btn active" onclick="switchTab('today',this)">
-    <span class="tab-icon">🍎</span>Today
-  </div>
-  <div class="tab-btn" onclick="switchTab('foods',this)">
-    <span class="tab-icon">🥗</span>Foods
-  </div>
-  <div class="tab-btn" onclick="switchTab('builder',this)">
-    <span class="tab-icon">🍽️</span>Meal
-  </div>
-  <div class="tab-btn" onclick="switchTab('planner',this)">
-    <span class="tab-icon">📅</span>Plan
-  </div>
-  <div class="tab-btn" onclick="switchTab('history',this)">
-    <span class="tab-icon">📈</span>Trends
-  </div>
-</div>
+<!-- TAB BAR (fixed to the bottom; see .tab-bar) -->
+<nav class="tab-bar" role="tablist" aria-label="Main">
+  <button class="tab-btn active" role="tab" aria-selected="true" data-tab="today" onclick="switchTab('today',this)">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>Today
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="foods" onclick="switchTab('foods',this)">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/></svg>Foods
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="builder" onclick="switchTab('builder',this)">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>Meals
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="planner" onclick="switchTab('planner',this)">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>Plan
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="history" onclick="switchTab('history',this)">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></svg>Trends
+  </button>
+</nav>
 
 <!-- ══════════════════════════════════════════ TODAY / DIARY SCREEN -->
 <div class="screen active" id="screen-today">
   <div class="diary-wrap">
     <!-- Date navigator -->
     <div class="diary-datebar">
-      <div class="week-nav-btn" onclick="changeDiaryDate(-1)">‹</div>
-      <div class="diary-date" onclick="goToday()">
+      <button class="week-nav-btn" onclick="changeDiaryDate(-1)" aria-label="Previous day">‹</button>
+      <button class="diary-date" onclick="goToday()" aria-label="Jump to today">
         <span id="diary-date-label">Today</span>
         <span id="diary-date-sub"></span>
-      </div>
-      <div class="week-nav-btn" onclick="changeDiaryDate(1)">›</div>
+      </button>
+      <button class="week-nav-btn" onclick="changeDiaryDate(1)" aria-label="Next day">›</button>
     </div>
+    <button class="today-pill" id="today-pill" onclick="goToday()" hidden>↩ Back to today</button>
 
     <div class="sync-badge" id="sync-badge" style="display:none;" onclick="syncNow(false)"></div>
 
@@ -1092,7 +1166,7 @@ body {
         <button class="energy-btn" onclick="pickEnergy('medium')"><span class="eb-ic">🔋</span>Medium</button>
         <button class="energy-btn" onclick="pickEnergy('high')"><span class="eb-ic">⚡</span>High</button>
       </div>
-      <div class="energy-skip" onclick="dismissEnergy()">Not now</div>
+      <button class="energy-skip" onclick="dismissEnergy()">Not now</button>
     </div>
 
     <!-- Calorie budget card -->
@@ -1147,18 +1221,18 @@ body {
     <div class="hydro-card">
       <div class="hydro-top">
         <span class="hydro-title">💧 Water</span>
-        <span class="hydro-total" onclick="setWaterGoal()" style="cursor:pointer;"><b id="hydro-oz">0</b> / <span id="hydro-goal">64</span> oz</span>
+        <button class="hydro-total" onclick="setWaterGoal()" title="Change your daily water goal"><b id="hydro-oz">0</b> / <span id="hydro-goal">64</span> oz</button>
       </div>
       <div class="hydro-bar"><div class="hydro-fill" id="hydro-fill" style="width:0%"></div></div>
       <div class="hydro-btns">
         <button onclick="addWater(8)">＋ Cup <span>8oz</span></button>
         <button onclick="addWater(16)">＋ Bottle <span>16oz</span></button>
         <button onclick="addWater(24)">＋ Large <span>24oz</span></button>
-        <button class="hydro-undo" onclick="addWater(-8)" title="Undo a cup">−</button>
+        <button class="hydro-undo" onclick="addWater(-8)" title="Remove a cup" aria-label="Remove a cup">−</button>
       </div>
     </div>
 
-    <div id="inv-today-alert" onclick="switchTab('foods',document.querySelectorAll('.tab-btn')[1]);showView('inventory');" style="display:none;cursor:pointer;margin:0 16px 12px;background:#FFF4E5;border:1px solid #F5C77E;color:#8A5A00;border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;line-height:1.5;"></div>
+    <button id="inv-today-alert" class="inv-alert" onclick="switchTab('foods');showView('inventory');" hidden></button>
 
     <!-- Quick actions -->
     <div class="diary-actions" style="padding-bottom:10px;">
@@ -1208,9 +1282,9 @@ body {
       </div>
 
       <div class="swipe-actions" id="swipe-actions">
-        <div class="swipe-btn btn-no" onclick="doSwipe('no')" title="Won't eat">✕</div>
-        <div class="swipe-btn btn-add" onclick="openAddFood()" title="Add custom food">＋</div>
-        <div class="swipe-btn btn-yes" onclick="doSwipe('yes')" title="Will eat">✓</div>
+        <button class="swipe-btn btn-no" onclick="doSwipe('no')" title="Won't eat" aria-label="Won't eat">✕</button>
+        <button class="swipe-btn btn-add" onclick="openAddFood()" title="Add custom food" aria-label="Add custom food">＋</button>
+        <button class="swipe-btn btn-yes" onclick="doSwipe('yes')" title="Will eat" aria-label="Will eat">✓</button>
       </div>
       <div class="swipe-hint">Swipe or tap ✓ / ✕</div>
       <button class="btn-secondary" style="margin:10px 16px 0;width:calc(100% - 32px);" onclick="openScanner('willeat')">📷 Scan a barcode to add a food</button>
@@ -1219,12 +1293,12 @@ body {
 
   <div id="list-view" style="display:none;">
     <div style="padding:14px 16px 10px; display:flex; justify-content:space-between; align-items:center;">
-      <div class="foods-tabs">
-        <div class="foods-tab active" onclick="filterList('yes',this)">Will eat</div>
-        <div class="foods-tab" onclick="filterList('no',this)">Won't eat</div>
-        <div class="foods-tab" onclick="filterList('all',this)">All</div>
+      <div class="foods-tabs" role="tablist">
+        <button class="foods-tab active" role="tab" onclick="filterList('yes',this)">Will eat</button>
+        <button class="foods-tab" role="tab" onclick="filterList('no',this)">Won't eat</button>
+        <button class="foods-tab" role="tab" onclick="filterList('all',this)">All</button>
       </div>
-      <button style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent);font-family:'DM Sans',sans-serif;font-weight:500;" onclick="showView('swipe')">+ Swipe</button>
+      <button class="link-btn" onclick="showView('swipe')">+ Swipe</button>
     </div>
     <div style="padding:0 16px 10px;">
       <input type="text" class="food-search" id="foods-add-search" placeholder="Search foods to add (USDA + Open Food Facts)…" oninput="searchFoodsToAdd()">
@@ -1240,7 +1314,7 @@ body {
   <div id="inventory-view" style="display:none;">
     <div style="padding:14px 16px 10px; display:flex; justify-content:space-between; align-items:center;">
       <div class="section-head" style="margin:0;">🧺 Inventory</div>
-      <button style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--accent);font-family:'DM Sans',sans-serif;font-weight:500;" onclick="showView('list')">← Foods</button>
+      <button class="link-btn" onclick="showView('list')">← Foods</button>
     </div>
     <div id="inv-alerts" style="padding:0 16px;"></div>
     <div class="foods-list" id="inventory-list"></div>
@@ -1255,10 +1329,10 @@ body {
   <div class="builder-wrap">
 
     <div style="display:flex;gap:8px;align-items:center;">
-      <div class="foods-tabs" style="flex:1;margin:0;">
-        <div class="foods-tab active" onclick="builderView('build',this)">Build meal</div>
-        <div class="foods-tab" onclick="builderView('saved',this)">Saved meals</div>
-        <div class="foods-tab" onclick="builderView('recipes',this)">Recipes</div>
+      <div class="foods-tabs" style="flex:1;margin:0;" role="tablist">
+        <button class="foods-tab active" role="tab" onclick="builderView('build',this)">Build meal</button>
+        <button class="foods-tab" role="tab" onclick="builderView('saved',this)">Saved meals</button>
+        <button class="foods-tab" role="tab" onclick="builderView('recipes',this)">Recipes</button>
       </div>
     </div>
 
@@ -1340,11 +1414,11 @@ body {
   <div class="planner-wrap">
     <div class="week-header">
       <div class="week-nav">
-        <div class="week-nav-btn" onclick="changeWeek(-1)">‹</div>
+        <button class="week-nav-btn" onclick="changeWeek(-1)" aria-label="Previous week">‹</button>
         <div class="week-label" id="week-label">This week</div>
-        <div class="week-nav-btn" onclick="changeWeek(1)">›</div>
+        <button class="week-nav-btn" onclick="changeWeek(1)" aria-label="Next week">›</button>
       </div>
-      <button onclick="exportXLSX()" style="background:none;border:1px solid var(--border);border-radius:999px;padding:6px 12px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--text2);cursor:pointer;font-weight:500;">📊 Export</button>
+      <button class="week-export" onclick="exportCSV()">📊 Export CSV</button>
     </div>
 
     <div class="week-summary-card">
@@ -1366,7 +1440,6 @@ body {
       <div class="steps-legend">
         <span><i style="background:var(--accent)"></i>Watch</span>
         <span><i style="background:var(--fat)"></i>Apple Health</span>
-        <span><i style="background:var(--carb)"></i>Phone</span>
       </div>
     </div>
     <div class="steps-card" id="nutrient-card">
@@ -1391,10 +1464,10 @@ body {
       <div id="insight-list" style="margin-top:8px;"></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
-      <div class="foods-tabs" style="flex:1;margin:0;">
-        <div class="foods-tab active" onclick="historyView('nutrition',this)">Nutrition</div>
-        <div class="foods-tab" onclick="historyView('exercise',this)">Exercise</div>
-        <div class="foods-tab" onclick="historyView('measurements',this)">Body</div>
+      <div class="foods-tabs" style="flex:1;margin:0;" role="tablist">
+        <button class="foods-tab active" role="tab" onclick="historyView('nutrition',this)">Nutrition</button>
+        <button class="foods-tab" role="tab" onclick="historyView('exercise',this)">Exercise</button>
+        <button class="foods-tab" role="tab" onclick="historyView('measurements',this)">Body</button>
       </div>
     </div>
     <div id="history-nutrition">
@@ -1415,35 +1488,44 @@ body {
 
 <!-- ══════════════════════════════════════════ SETTINGS OVERLAY -->
 <div class="overlay" id="settings-overlay" onclick="overlayClick(event,'settings-overlay')">
-  <div class="settings-drawer">
+  <div class="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="drawer-header">
-      <div class="drawer-title">Profile & settings</div>
-      <button class="drawer-close" onclick="closeSettings()">✕</button>
+      <div class="drawer-title" id="settings-title">Profile & settings</div>
+      <button class="drawer-close" onclick="closeSettings()" aria-label="Close settings">✕</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">Appearance</div>
+      <div class="chip-group" id="theme-chips">
+        <button class="chip active" data-theme="auto" onclick="selectTheme(this)">Auto</button>
+        <button class="chip" data-theme="light" onclick="selectTheme(this)">Light</button>
+        <button class="chip" data-theme="dark" onclick="selectTheme(this)">Dark</button>
+      </div>
     </div>
 
     <div class="settings-section">
       <div class="settings-label">Body stats</div>
       <div class="settings-row">
-        <label>Weight (lb)</label>
+        <label for="s-weight">Weight (lb)</label>
         <input type="number" id="s-weight" value="185" min="80" max="400" onchange="saveSettings()">
       </div>
       <div class="settings-row">
-        <label>Height (in)</label>
+        <label for="s-height">Height (in)</label>
         <input type="number" id="s-height" value="70" min="48" max="96" onchange="saveSettings()">
       </div>
       <div class="settings-row">
-        <label>Age</label>
+        <label for="s-age">Age</label>
         <input type="number" id="s-age" value="30" min="16" max="99" onchange="saveSettings()">
       </div>
       <div class="settings-row">
-        <label>Biological sex</label>
+        <label for="s-sex">Biological sex</label>
         <select id="s-sex" onchange="saveSettings()">
           <option value="male">Male</option>
           <option value="female">Female</option>
         </select>
       </div>
       <div class="settings-row">
-        <label>Activity level</label>
+        <label for="s-activity">Activity level</label>
         <select id="s-activity" onchange="saveSettings()">
           <option value="1.2">Sedentary</option>
           <option value="1.375">Light (1–3x/wk)</option>
@@ -1457,21 +1539,25 @@ body {
     <div class="settings-section">
       <div class="settings-label">Goal</div>
       <div class="chip-group" id="goal-chips">
-        <div class="chip" data-goal="-500" onclick="selectGoal(this)">Aggressive cut</div>
-        <div class="chip" data-goal="-250" onclick="selectGoal(this)">Cut</div>
-        <div class="chip active" data-goal="0" onclick="selectGoal(this)">Maintain</div>
-        <div class="chip" data-goal="250" onclick="selectGoal(this)">Lean bulk</div>
-        <div class="chip" data-goal="500" onclick="selectGoal(this)">Bulk</div>
+        <button class="chip" data-goal="-500" onclick="selectGoal(this)">Aggressive cut</button>
+        <button class="chip" data-goal="-250" onclick="selectGoal(this)">Cut</button>
+        <button class="chip active" data-goal="0" onclick="selectGoal(this)">Maintain</button>
+        <button class="chip" data-goal="250" onclick="selectGoal(this)">Lean bulk</button>
+        <button class="chip" data-goal="500" onclick="selectGoal(this)">Bulk</button>
       </div>
     </div>
 
     <div class="settings-section">
       <div class="settings-label">Meals per day</div>
       <div class="chip-group" id="meal-count-chips">
-        <div class="chip" data-meals="2" onclick="selectMeals(this)">2</div>
-        <div class="chip active" data-meals="3" onclick="selectMeals(this)">3</div>
-        <div class="chip" data-meals="4" onclick="selectMeals(this)">4</div>
-        <div class="chip" data-meals="5" onclick="selectMeals(this)">5</div>
+        <button class="chip" data-meals="2" onclick="selectMeals(this)">2</button>
+        <button class="chip active" data-meals="3" onclick="selectMeals(this)">3</button>
+        <button class="chip" data-meals="4" onclick="selectMeals(this)">4</button>
+        <button class="chip" data-meals="5" onclick="selectMeals(this)">5</button>
+      </div>
+      <div class="settings-row">
+        <label for="s-water">Water goal (oz / day)</label>
+        <input type="number" id="s-water" value="64" min="16" max="300" step="8" onchange="saveWaterGoal()">
       </div>
     </div>
 
@@ -1487,22 +1573,22 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Backup & export</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Cloud sync already backs up across your devices. Use these for a local copy: <b>Backup</b> saves a JSON file (no passwords/tokens), <b>Restore</b> loads one, and <b>Excel</b> exports your diary, daily totals, steps, energy and micronutrients as a spreadsheet.</p>
+      <p class="note">Cloud sync already backs up across your devices. Use these for a local copy: <b>Backup</b> saves a JSON file (no passwords/tokens), <b>Restore</b> loads one, and <b>CSV</b> exports your diary, daily totals, steps, energy and micronutrients as a spreadsheet (opens in Excel, Numbers or Sheets).</p>
       <div class="export-grid">
-        <div class="export-btn" onclick="exportJSON()"><span class="eicon">💾</span>Backup</div>
-        <div class="export-btn" onclick="importJSON()"><span class="eicon">📂</span>Restore</div>
-        <div class="export-btn" onclick="exportXLSX()"><span class="eicon">📊</span>Excel</div>
+        <button class="export-btn" onclick="exportJSON()"><span class="eicon">💾</span>Backup</button>
+        <button class="export-btn" onclick="importJSON()"><span class="eicon">📂</span>Restore</button>
+        <button class="export-btn" onclick="exportCSV()"><span class="eicon">📊</span>CSV</button>
       </div>
       <input type="file" id="import-file" accept=".json" style="display:none;" onchange="handleImport(event)">
     </div>
 
     <div class="settings-section">
       <div class="settings-label">Import from MyFitnessPal</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Import your MFP export CSVs to pre-populate your weight history and view past nutrition data. Export from MFP: Settings → Export Data.</p>
+      <p class="note">Import your MFP export CSVs to pre-populate your weight history and view past nutrition data. Export from MFP: Settings → Export Data.</p>
       <div class="export-grid" style="grid-template-columns:1fr 1fr 1fr;">
-        <div class="export-btn" onclick="triggerMFP('nutrition')"><span class="eicon">🥗</span>Nutrition</div>
-        <div class="export-btn" onclick="triggerMFP('exercise')"><span class="eicon">🏃</span>Exercise</div>
-        <div class="export-btn" onclick="triggerMFP('measurement')"><span class="eicon">📏</span>Measurements</div>
+        <button class="export-btn" onclick="triggerMFP('nutrition')"><span class="eicon">🥗</span>Nutrition</button>
+        <button class="export-btn" onclick="triggerMFP('exercise')"><span class="eicon">🏃</span>Exercise</button>
+        <button class="export-btn" onclick="triggerMFP('measurement')"><span class="eicon">📏</span>Measurements</button>
       </div>
       <input type="file" id="mfp-nutrition-file" accept=".csv" style="display:none;" onchange="handleMFP(event,'nutrition')">
       <input type="file" id="mfp-exercise-file" accept=".csv" style="display:none;" onchange="handleMFP(event,'exercise')">
@@ -1513,33 +1599,33 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Cloud sync</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Sync your diary and settings across devices, and enable zero-touch step import. Enter your email to get a one-time sign-in link.</p>
+      <p class="note">Sync your diary and settings across devices, and enable zero-touch step import. Enter your email to get a one-time sign-in link.</p>
       <div id="sb-config-rows" style="display:none;">
-        <div class="settings-row"><label>Supabase URL</label><input type="text" id="sb-url" placeholder="https://xxxx.supabase.co" onchange="saveSyncConfig()" style="width:170px;"></div>
-        <div class="settings-row"><label>Public key</label><input type="text" id="sb-key" placeholder="sb_publishable_… or eyJ…" onchange="saveSyncConfig()" style="width:170px;"></div>
+        <div class="settings-row"><label for="sb-url">Supabase URL</label><input type="text" id="sb-url" placeholder="https://xxxx.supabase.co" onchange="saveSyncConfig()" style="width:170px;"></div>
+        <div class="settings-row"><label for="sb-key">Public key</label><input type="text" id="sb-key" placeholder="sb_publishable_… or eyJ…" onchange="saveSyncConfig()" style="width:170px;"></div>
       </div>
       <div id="sync-signedout">
-        <div class="settings-row"><label>Email</label><input type="email" id="sb-email" placeholder="you@email.com" style="width:170px;"></div>
+        <div class="settings-row"><label for="sb-email">Email</label><input type="email" id="sb-email" placeholder="you@email.com" autocomplete="email" style="width:170px;"></div>
         <button class="btn-primary" id="sb-send-btn" style="margin-top:10px;" onclick="sendMagicLink()">Email me a sign-in link</button>
-        <p style="font-size:12px;color:var(--text2);margin:12px 0 6px;line-height:1.5;"><b>Easiest:</b> in the email, <b>long-press the sign-in link → Copy Link</b>, then paste it here (this signs the app in without opening another browser):</p>
-        <textarea id="sb-link" placeholder="https://…supabase.co/auth/v1/verify?token=…" style="width:100%;height:54px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;font-size:12px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;"></textarea>
+        <p class="note" style="margin:12px 0 6px;"><b>Easiest:</b> in the email, <b>long-press the sign-in link → Copy Link</b>, then paste it here (this signs the app in without opening another browser):</p>
+        <textarea id="sb-link" class="field" aria-label="Sign-in link from the email" placeholder="https://…supabase.co/auth/v1/verify?token=…" style="height:60px;padding:8px;font-size:13px;"></textarea>
         <button class="btn-secondary" style="margin-top:6px;" onclick="verifyPastedLink()">Paste link &amp; sign in</button>
-        <p style="font-size:11px;color:var(--text3);margin:12px 0 6px;line-height:1.5;">Or, if your email shows a 6-digit code, type it:</p>
-        <div class="settings-row"><label>Code</label><input type="text" id="sb-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:100px;"></div>
+        <p class="note-sm" style="margin:12px 0 6px;">Or, if your email shows a 6-digit code, type it:</p>
+        <div class="settings-row"><label for="sb-code">Code</label><input type="text" id="sb-code" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" style="width:110px;"></div>
         <button class="btn-secondary" style="margin-top:8px;" onclick="verifyEmailOtp()">Verify code</button>
 
-        <div style="font-size:11px;color:var(--text3);margin-top:14px;cursor:pointer;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</div>
+        <button class="link-btn" style="font-size:11px;color:var(--text3);margin-top:10px;" onclick="toggleSbAdvanced()">Advanced — use a different project ▾</button>
       </div>
       <div id="sync-signedin" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
           <span style="font-size:16px;">☁️</span><div>Signed in as <b id="sb-user"></b></div>
         </div>
         <div class="export-grid">
-          <div class="export-btn" onclick="syncNow(false)"><span class="eicon">🔄</span>Sync now</div>
-          <div class="export-btn" onclick="signOutSb()"><span class="eicon">🚪</span>Sign out</div>
+          <button class="export-btn" onclick="syncNow(false)"><span class="eicon">🔄</span>Sync now</button>
+          <button class="export-btn" onclick="signOutSb()"><span class="eicon">🚪</span>Sign out</button>
         </div>
         <div class="settings-label" style="margin-top:16px;">Zero-touch step import</div>
-        <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Point an Apple Shortcuts automation at this endpoint to push your Health steps automatically in the background (recipe in the README). These are your personal ingest credentials — keep them private.</p>
+        <p class="note" style="margin-bottom:8px;">Point an Apple Shortcuts automation at this endpoint to push your Health steps automatically in the background (recipe in the README). These are your personal ingest credentials — keep them private.</p>
         <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 12px;font-size:11px;word-break:break-all;line-height:1.7;">
           <div><span style="color:var(--text3);">Endpoint</span><br><code id="sb-ingest-url"></code></div>
           <div style="margin-top:6px;"><span style="color:var(--text3);">Token</span><br><code id="sb-ingest-token"></code></div>
@@ -1551,7 +1637,7 @@ body {
     <div class="settings-section">
       <div class="settings-label">Claude food assistant</div>
       <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Reads nutrition labels into custom foods, and logs meals from a description or a photo. Runs through the <code>claude-food</code> function in your Supabase project with your own Anthropic API key (setup steps in the README). Needs the Cloud sync sign-in above.</p>
-      <div id="claude-settings-status" class="claude-status" style="display:none;"></div>
+      <div id="claude-settings-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
       <button class="btn-secondary" onclick="testClaude()">Test connection</button>
     </div>
 
@@ -1562,16 +1648,16 @@ body {
           <span style="font-size:16px;">✅</span><div>Connected to Google Health</div>
         </div>
         <div class="export-grid">
-          <div class="export-btn" onclick="syncGoogleHealthToday(true)"><span class="eicon">🔄</span>Sync now</div>
-          <div class="export-btn" onclick="disconnectGoogleHealth()"><span class="eicon">🔌</span>Disconnect</div>
+          <button class="export-btn" onclick="syncGoogleHealthToday(true)"><span class="eicon">🔄</span>Sync now</button>
+          <button class="export-btn" onclick="disconnectGoogleHealth()"><span class="eicon">🔌</span>Disconnect</button>
         </div>
       </div>
       <div id="gh-disconnected">
-        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Fitbit's own API is being retired (Sept 2026) and replaced by the <b>Google Health API</b>. Connect with Google to pull daily <b>steps, active calories, and resting heart rate</b> — including your Fitbit device's, once it's migrated to your Google account. The Client ID is built in — just tap connect and approve.</p>
+        <p class="note">Fitbit's own API is being retired (Sept 2026) and replaced by the <b>Google Health API</b>. Connect with Google to pull daily <b>steps, active calories, and resting heart rate</b> — including your Fitbit device's, once it's migrated to your Google account. The Client ID is built in — just tap connect and approve.</p>
         <button class="btn-primary" style="margin-top:4px;" onclick="connectGoogleHealth()">Connect Google Health</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:10px;"><a href="#" onclick="toggleGhAdvanced();return false;" style="color:var(--text2);">Advanced: use a different Client ID</a></div>
+        <button class="link-btn" style="font-size:11px;color:var(--text3);margin-top:6px;" onclick="toggleGhAdvanced()">Advanced — use a different Client ID ▾</button>
         <div id="gh-advanced" style="display:none;margin-top:8px;">
-          <div class="settings-row"><label>Google Client ID</label><input type="text" id="gh-client-id" placeholder="…apps.googleusercontent.com" style="width:150px;" onchange="saveGoogleClientId()"></div>
+          <div class="settings-row"><label for="gh-client-id">Google Client ID</label><input type="text" id="gh-client-id" placeholder="…apps.googleusercontent.com" style="width:150px;" onchange="saveGoogleClientId()"></div>
           <div style="font-size:11px;color:var(--text3);margin-top:8px;word-break:break-all;">Authorized JavaScript origin to register: <span id="gh-origin"></span></div>
         </div>
       </div>
@@ -1579,31 +1665,31 @@ body {
 
     <div class="settings-section">
       <div class="settings-label">Restaurant menus (Nutritionix)</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Add restaurant &amp; chain-menu items to search (e.g. a specific "Dunkin' Bacon Egg &amp; Cheese"). <b>Note:</b> Nutritionix ended its free tier — this needs a paid/enterprise <b>App ID</b> and <b>App Key</b> (request one at developer.nutritionix.com). For most prepared foods, the built-in USDA search (incl. FNDDS) already works with no key. If you have Nutritionix credentials, paste them below.</p>
-      <div class="settings-row"><label>App ID</label><input type="text" id="nx-app-id" placeholder="xxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
-      <div class="settings-row"><label>App Key</label><input type="text" id="nx-app-key" placeholder="xxxxxxxxxxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
+      <p class="note">Add restaurant &amp; chain-menu items to search (e.g. a specific "Dunkin' Bacon Egg &amp; Cheese"). <b>Note:</b> Nutritionix ended its free tier — this needs a paid/enterprise <b>App ID</b> and <b>App Key</b> (request one at developer.nutritionix.com). For most prepared foods, the built-in USDA search (incl. FNDDS) already works with no key. If you have Nutritionix credentials, paste them below.</p>
+      <div class="settings-row"><label for="nx-app-id">App ID</label><input type="text" id="nx-app-id" placeholder="xxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
+      <div class="settings-row"><label for="nx-app-key">App Key</label><input type="text" id="nx-app-key" placeholder="xxxxxxxxxxxxxxxx" style="width:150px;" onchange="saveNutritionix()"></div>
       <div id="nx-status" style="font-size:11px;color:var(--text3);margin-top:6px;"></div>
     </div>
 
     <div class="settings-section">
       <div class="settings-label">Energy check-ins</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Rate your energy (Low / Medium / High) through the day so PlateIQ can learn your patterns. It asks more often at first, then eases off as it gathers data — currently about <b id="energy-cadence">—</b>×/day.</p>
+      <p class="note">Rate your energy (Low / Medium / High) through the day so PlateIQ can learn your patterns. It asks more often at first, then eases off as it gathers data — currently about <b id="energy-cadence">—</b>×/day.</p>
       <button class="btn-primary" id="energy-enable-btn" style="margin-bottom:10px;" onclick="toggleEnergy()">Turn on check-ins</button>
-      <div class="settings-row"><label>Waking hours</label><span><input type="number" id="energy-wake-start" min="0" max="23" style="width:52px;" onchange="saveEnergyCfg()"> – <input type="number" id="energy-wake-end" min="1" max="24" style="width:52px;" onchange="saveEnergyCfg()"></span></div>
+      <div class="settings-row"><label for="energy-wake-start">Waking hours</label><span><input type="number" id="energy-wake-start" aria-label="Wake start hour" min="0" max="23" style="width:58px;" onchange="saveEnergyCfg()"> – <input type="number" id="energy-wake-end" aria-label="Wake end hour" min="1" max="24" style="width:58px;" onchange="saveEnergyCfg()"></span></div>
       <button class="btn-secondary" id="energy-notify-btn" style="margin-top:10px;" onclick="enableEnergyNotify()">Enable notifications</button>
       <div class="settings-label" style="margin-top:16px;">Background reminders (push)</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Get reminders even when the app is fully closed, sent on your adaptive schedule. Requires Cloud sync (signed in) plus a one-time Supabase push setup — see the README.</p>
+      <p class="note">Get reminders even when the app is fully closed, sent on your adaptive schedule. Requires Cloud sync (signed in) plus a one-time Supabase push setup — see the README.</p>
       <button class="btn-primary" id="energy-push-btn" onclick="toggleEnergyPush()">Enable background reminders</button>
-      <div class="settings-row" style="margin-top:10px;"><label>VAPID key</label><input type="text" id="energy-vapid" placeholder="(default provided)" style="width:150px;" onchange="saveVapid()"></div>
+      <div class="settings-row" style="margin-top:10px;"><label for="energy-vapid">VAPID key</label><input type="text" id="energy-vapid" placeholder="(default provided)" style="width:150px;" onchange="saveVapid()"></div>
       <div id="energy-push-status" style="font-size:11px;color:var(--text3);margin-top:6px;"></div>
     </div>
 
     <div class="settings-section">
       <div class="settings-label">Danger zone</div>
-      <button class="btn-secondary" style="color:var(--warn);border-color:var(--warn);" onclick="resetAll()">Reset all data</button>
+      <button class="btn-secondary btn-danger" onclick="resetAll()">Reset all data</button>
     </div>
     <div style="text-align:center;font-size:11px;color:var(--text3);padding:8px 0 4px;">
-      PlateIQ <span id="app-version"></span> · <span style="cursor:pointer;color:var(--accent);" onclick="checkForUpdate()">Check for updates</span>
+      PlateIQ <span id="app-version"></span> · <button class="link-btn" style="font-size:11px;padding:0;" onclick="checkForUpdate()">Check for updates</button>
     </div>
     <div style="height:32px;"></div>
   </div>
@@ -1611,8 +1697,8 @@ body {
 
 <!-- ADD CUSTOM FOOD MODAL -->
 <div class="modal-overlay" id="add-food-modal" onclick="overlayClick(event,'add-food-modal')">
-  <div class="modal">
-    <div class="modal-title">Add custom food</div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
+    <div class="modal-title" id="cf-title">Add custom food</div>
     <div class="cl-label-head">🏷️ Read a nutrition label with Claude</div>
     <div class="cl-photo-btns">
       <button type="button" class="btn-secondary" onclick="document.getElementById('cf-label-camera').click()">📷 Take photo</button>
@@ -1620,46 +1706,46 @@ body {
     </div>
     <input type="file" id="cf-label-camera" accept="image/*" capture="environment" style="display:none;" onchange="onLabelPhoto(event)">
     <input type="file" id="cf-label-input" accept="image/*" style="display:none;" onchange="onLabelPhoto(event)">
-    <div id="cf-label-status" class="claude-status" style="display:none;"></div>
+    <div id="cf-label-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
     <div class="form-group">
-      <label>Food name</label>
-      <input type="text" id="cf-name" placeholder="e.g. Greek yogurt">
+      <label for="cf-name">Food name</label>
+      <input type="text" id="cf-name" placeholder="e.g. Greek yogurt" autocomplete="off">
     </div>
     <div class="form-group">
-      <label>Icon — emoji or your own photo</label>
+      <label for="cf-emoji">Icon — emoji or your own photo</label>
       <div style="display:flex;align-items:center;gap:8px;">
         <span id="cf-icon-preview" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;">🍽️</span>
-        <input type="text" id="cf-emoji" placeholder="🥛" maxlength="4" style="width:56px;text-align:center;font-size:20px;" oninput="onAddFoodEmoji()">
-        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cf-photo-input').click()">📷 Photo</button>
+        <input type="text" id="cf-emoji" placeholder="🥛" maxlength="4" style="width:60px;text-align:center;font-size:20px;" oninput="onAddFoodEmoji()">
+        <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('cf-photo-input').click()">📷 Photo</button>
         <a id="cf-photo-clear" href="javascript:void(0)" onclick="clearAddFoodPhoto()" style="color:var(--text3);font-size:12px;display:none;">use emoji</a>
         <input type="file" id="cf-photo-input" accept="image/*" style="display:none;" onchange="onAddFoodPhoto(event)">
       </div>
     </div>
     <div class="form-group">
-      <label>Serving size (e.g. 1 cup, 100g)</label>
+      <label for="cf-serving">Serving size (e.g. 1 cup, 100g)</label>
       <input type="text" id="cf-serving" placeholder="1 cup">
     </div>
     <div class="form-row">
       <div class="form-group" style="margin:0;">
-        <label>Calories</label>
-        <input type="number" id="cf-kcal" placeholder="150" min="0">
+        <label for="cf-kcal">Calories</label>
+        <input type="number" id="cf-kcal" placeholder="150" min="0" inputmode="decimal">
       </div>
       <div class="form-group" style="margin:0;">
-        <label>Protein (g)</label>
-        <input type="number" id="cf-protein" placeholder="15" min="0">
+        <label for="cf-protein">Protein (g)</label>
+        <input type="number" id="cf-protein" placeholder="15" min="0" inputmode="decimal">
       </div>
       <div class="form-group" style="margin:0;">
-        <label>Carbs (g)</label>
-        <input type="number" id="cf-carbs" placeholder="10" min="0">
+        <label for="cf-carbs">Carbs (g)</label>
+        <input type="number" id="cf-carbs" placeholder="10" min="0" inputmode="decimal">
       </div>
     </div>
     <div class="form-group">
-      <label>Fat (g)</label>
-      <input type="number" id="cf-fat" placeholder="5" min="0" style="width:100px;">
+      <label for="cf-fat">Fat (g)</label>
+      <input type="number" id="cf-fat" placeholder="5" min="0" inputmode="decimal" style="width:110px;">
     </div>
     <div class="form-group">
-      <label>Category</label>
-      <select id="cf-category" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+      <label for="cf-category">Category</label>
+      <select id="cf-category">
         <option>Protein</option><option>Grain</option><option>Vegetable</option>
         <option>Fruit</option><option>Dairy</option><option>Fat</option>
         <option>Snack</option><option>Other</option>
@@ -1670,9 +1756,9 @@ body {
         <input type="checkbox" id="cf-snack" style="width:20px;height:20px;"></div>
     </div>
     <div class="form-group">
-      <label>Best-by / expiration date <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
-      <input type="date" id="cf-bestby" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
-      <div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4;">Set a date to also track this in your inventory and get low/expiring alerts.</div>
+      <label for="cf-bestby">Best-by / expiration date <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
+      <input type="date" id="cf-bestby">
+      <div class="note-sm" style="margin-top:4px;">Set a date to also track this in your inventory and get low/expiring alerts.</div>
     </div>
     <button class="btn-primary" onclick="saveCustomFood()">Add food</button>
     <button class="btn-secondary" onclick="closeModal('add-food-modal')">Cancel</button>
@@ -1681,15 +1767,15 @@ body {
 
 <!-- ADD / EDIT INVENTORY MODAL -->
 <div class="modal-overlay" id="add-inv-modal" onclick="overlayClick(event,'add-inv-modal')">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="inv-modal-title">
     <div class="modal-title" id="inv-modal-title">Add to inventory</div>
-    <div class="form-group"><label>Item</label><input type="text" id="inv-name" placeholder="e.g. Greek yogurt"></div>
+    <div class="form-group"><label for="inv-name">Item</label><input type="text" id="inv-name" placeholder="e.g. Greek yogurt"></div>
     <div class="form-row">
-      <div class="form-group" style="margin:0;"><label>Quantity</label><input type="number" id="inv-qty" value="1" min="0" step="any"></div>
-      <div class="form-group" style="margin:0;"><label>Unit</label><input type="text" id="inv-unit" placeholder="items / oz / g"></div>
+      <div class="form-group" style="margin:0;"><label for="inv-qty">Quantity</label><input type="number" id="inv-qty" value="1" min="0" step="any" inputmode="decimal"></div>
+      <div class="form-group" style="margin:0;"><label for="inv-unit">Unit</label><input type="text" id="inv-unit" placeholder="items / oz / g"></div>
     </div>
-    <div class="form-group"><label>Best-by date</label><input type="date" id="inv-bestby" style="width:100%;"></div>
-    <div class="form-group"><label>Alert when quantity ≤</label><input type="number" id="inv-low" value="1" min="0" step="any"></div>
+    <div class="form-group"><label for="inv-bestby">Best-by date</label><input type="date" id="inv-bestby"></div>
+    <div class="form-group"><label for="inv-low">Alert when quantity ≤</label><input type="number" id="inv-low" value="1" min="0" step="any" inputmode="decimal"></div>
     <button class="btn-primary" onclick="saveInventoryItem()">Save</button>
     <button class="btn-secondary" onclick="closeModal('add-inv-modal')">Cancel</button>
   </div>
@@ -1697,9 +1783,9 @@ body {
 
 <!-- FOOD PICKER MODAL -->
 <div class="modal-overlay" id="food-picker-modal" style="z-index:260;" onclick="overlayClick(event,'food-picker-modal')">
-  <div class="modal" style="height:82dvh;display:flex;flex-direction:column;overflow:hidden;">
-    <div class="modal-title" style="flex-shrink:0;">Add food to meal</div>
-    <input type="text" class="food-search" id="food-search-input" placeholder="Search foods (USDA + Open Food Facts)…" oninput="filterFoodPicker()" style="flex-shrink:0;">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="picker-title" style="height:82dvh;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="modal-title" id="picker-title" style="flex-shrink:0;">Add food to meal</div>
+    <input type="search" class="food-search" id="food-search-input" placeholder="Search foods (USDA + Open Food Facts)…" aria-label="Search foods" autocomplete="off" oninput="filterFoodPicker()" style="flex-shrink:0;">
     <div class="food-pick-list" id="food-pick-list" style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
     <button class="btn-secondary" onclick="closeModal('food-picker-modal')" style="margin-top:12px;flex-shrink:0;">Cancel</button>
   </div>
@@ -1707,7 +1793,7 @@ body {
 
 <!-- MEAL ASSIGN MODAL -->
 <div class="modal-overlay" id="meal-assign-modal" onclick="overlayClick(event,'meal-assign-modal')">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="meal-assign-title">
     <div class="modal-title" id="meal-assign-title">Assign meal</div>
     <div class="meal-pick-list" id="meal-pick-list"></div>
     <button class="btn-secondary" onclick="closeModal('meal-assign-modal')" style="margin-top:12px;">Cancel</button>
@@ -1716,27 +1802,27 @@ body {
 
 <!-- RECIPE UPLOAD MODAL -->
 <div class="modal-overlay" id="recipe-upload-modal" onclick="overlayClick(event,'recipe-upload-modal')">
-  <div class="modal" style="max-height:88dvh;overflow-y:auto;">
-    <div class="modal-title">Add recipe</div>
-    <div class="foods-tabs" style="margin-bottom:14px;">
-      <div class="foods-tab active" onclick="recipeInputMode('pdf',this)" id="rtab-pdf">Upload PDF</div>
-      <div class="foods-tab" onclick="recipeInputMode('text',this)" id="rtab-text">Paste text</div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ru-title" style="max-height:88dvh;overflow-y:auto;">
+    <div class="modal-title" id="ru-title">Add recipe</div>
+    <div class="foods-tabs" style="margin-bottom:14px;" role="tablist">
+      <button class="foods-tab active" role="tab" onclick="recipeInputMode('pdf',this)" id="rtab-pdf">Upload PDF</button>
+      <button class="foods-tab" role="tab" onclick="recipeInputMode('text',this)" id="rtab-text">Paste text</button>
     </div>
 
     <div id="recipe-pdf-input">
-      <div id="pdf-drop-zone" style="border:2px dashed var(--border);border-radius:var(--radius);padding:28px 16px;text-align:center;cursor:pointer;margin-bottom:12px;" onclick="document.getElementById('recipe-pdf-file').click()">
+      <button type="button" id="pdf-drop-zone" style="width:100%;border:2px dashed var(--border);border-radius:var(--radius);padding:28px 16px;text-align:center;margin-bottom:12px;" onclick="document.getElementById('recipe-pdf-file').click()">
         <div style="font-size:32px;margin-bottom:8px;">📄</div>
         <div style="font-size:13px;font-weight:500;color:var(--text2);">Tap to upload recipe PDF</div>
         <div style="font-size:11px;color:var(--text3);margin-top:4px;">NYT Cooking, Serious Eats, any printed recipe</div>
-      </div>
+      </button>
       <input type="file" id="recipe-pdf-file" accept=".pdf" style="display:none;" onchange="handleRecipePDF(event)">
       <div id="pdf-parse-status" style="font-size:12px;color:var(--text3);text-align:center;min-height:20px;"></div>
     </div>
 
     <div id="recipe-text-input" style="display:none;">
       <div class="form-group">
-        <label>Paste recipe text</label>
-        <textarea id="recipe-paste-text" style="width:100%;height:140px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="Paste the full recipe including title, ingredients, and instructions..."></textarea>
+        <label for="recipe-paste-text">Paste recipe text</label>
+        <textarea id="recipe-paste-text" class="field" style="height:140px;" placeholder="Paste the full recipe including title, ingredients, and instructions..."></textarea>
       </div>
       <button class="btn-primary" onclick="parseRecipeText()">Parse recipe</button>
     </div>
@@ -1745,15 +1831,15 @@ body {
 
 <!-- RECIPE BUILDER MODAL (build a recipe from component foods) -->
 <div class="modal-overlay" id="recipe-build-modal" onclick="overlayClick(event,'recipe-build-modal')">
-  <div class="modal" style="height:88dvh;display:flex;flex-direction:column;overflow:hidden;">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recipe-build-title" style="height:88dvh;display:flex;flex-direction:column;overflow:hidden;">
     <div class="modal-title" id="recipe-build-title" style="flex-shrink:0;">Build a recipe</div>
     <div style="flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;">
       <div class="form-group">
-        <label>Recipe name</label>
+        <label for="rb-name">Recipe name</label>
         <input type="text" id="rb-name" placeholder="e.g. Chicken burrito bowl">
       </div>
       <div class="form-group">
-        <label>Servings this recipe makes (yield)</label>
+        <label for="rb-servings">Servings this recipe makes (yield)</label>
         <input type="number" id="rb-servings" min="1" step="1" value="1" placeholder="4" oninput="renderRecipeBuilder()">
       </div>
       <div id="rb-preview" style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text2);"></div>
@@ -1764,19 +1850,19 @@ body {
       <div class="form-group" id="rb-manual-macros" style="margin-top:14px;">
         <label>Per-serving macros <span style="color:var(--text3);font-weight:400;">(for a typed recipe with no component foods above)</span></label>
         <div style="display:flex;gap:8px;">
-          <input type="number" id="rb-kcal" min="0" step="any" placeholder="cal" style="flex:1;min-width:0;">
-          <input type="number" id="rb-protein" min="0" step="any" placeholder="P (g)" style="flex:1;min-width:0;">
-          <input type="number" id="rb-carbs" min="0" step="any" placeholder="C (g)" style="flex:1;min-width:0;">
-          <input type="number" id="rb-fat" min="0" step="any" placeholder="F (g)" style="flex:1;min-width:0;">
+          <input type="number" id="rb-kcal" min="0" step="any" placeholder="cal" aria-label="Calories per serving" inputmode="decimal" style="flex:1;min-width:0;padding:9px 8px;">
+          <input type="number" id="rb-protein" min="0" step="any" placeholder="P (g)" aria-label="Protein per serving" inputmode="decimal" style="flex:1;min-width:0;padding:9px 8px;">
+          <input type="number" id="rb-carbs" min="0" step="any" placeholder="C (g)" aria-label="Carbs per serving" inputmode="decimal" style="flex:1;min-width:0;padding:9px 8px;">
+          <input type="number" id="rb-fat" min="0" step="any" placeholder="F (g)" aria-label="Fat per serving" inputmode="decimal" style="flex:1;min-width:0;padding:9px 8px;">
         </div>
       </div>
       <div class="form-group" style="margin-top:14px;">
-        <label>Extra ingredients <span style="color:var(--text3);font-weight:400;">(optional, one per line — added to the list)</span></label>
-        <textarea id="rb-ingredients" style="width:100%;height:70px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="e.g. 2 tbsp olive oil&#10;Salt & pepper to taste"></textarea>
+        <label for="rb-ingredients">Extra ingredients <span style="color:var(--text3);font-weight:400;">(optional, one per line — added to the list)</span></label>
+        <textarea id="rb-ingredients" class="field" style="height:70px;" placeholder="e.g. 2 tbsp olive oil&#10;Salt & pepper to taste"></textarea>
       </div>
       <div class="form-group">
-        <label>Instructions <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
-        <textarea id="rb-instructions" style="width:100%;height:70px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);resize:none;" placeholder="Step-by-step (optional)"></textarea>
+        <label for="rb-instructions">Instructions <span style="color:var(--text3);font-weight:400;">(optional)</span></label>
+        <textarea id="rb-instructions" class="field" style="height:70px;" placeholder="Step-by-step (optional)"></textarea>
       </div>
     </div>
     <div style="flex-shrink:0;padding-top:10px;">
@@ -1788,19 +1874,19 @@ body {
 
 <!-- RECIPE DETAIL / MACRO EDITOR MODAL -->
 <div class="modal-overlay" id="recipe-detail-modal" onclick="overlayClick(event,'recipe-detail-modal')">
-  <div class="modal" style="max-height:92dvh;overflow-y:auto;">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rd-title" style="max-height:92dvh;overflow-y:auto;">
     <div class="modal-title" id="rd-title">Review recipe</div>
 
     <div class="form-group">
-      <label>Recipe name</label>
+      <label for="rd-name">Recipe name</label>
       <input type="text" id="rd-name" placeholder="Recipe name">
     </div>
     <div class="form-group">
-      <label>Source</label>
+      <label for="rd-source">Source</label>
       <input type="text" id="rd-source" placeholder="e.g. NYT Cooking, personal">
     </div>
     <div class="form-group">
-      <label>Servings this recipe makes</label>
+      <label for="rd-servings">Servings this recipe makes</label>
       <input type="number" id="rd-servings" value="4" min="1" max="50">
     </div>
 
@@ -1816,23 +1902,23 @@ body {
 
     <div style="margin-bottom:14px;">
       <div class="section-head">Macros per serving</div>
-      <p style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;">Fill in estimated macros per serving. Leave blank if unknown — you can update later.</p>
+      <p class="note-sm" style="margin-bottom:10px;">Fill in estimated macros per serving. Leave blank if unknown — you can update later.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div class="form-group" style="margin:0;">
-          <label>Calories</label>
-          <input type="number" id="rd-kcal" placeholder="e.g. 380" min="0">
+          <label for="rd-kcal">Calories</label>
+          <input type="number" id="rd-kcal" placeholder="e.g. 380" min="0" inputmode="decimal">
         </div>
         <div class="form-group" style="margin:0;">
-          <label>Protein (g)</label>
-          <input type="number" id="rd-protein" placeholder="e.g. 34" min="0">
+          <label for="rd-protein">Protein (g)</label>
+          <input type="number" id="rd-protein" placeholder="e.g. 34" min="0" inputmode="decimal">
         </div>
         <div class="form-group" style="margin:0;">
-          <label>Carbs (g)</label>
-          <input type="number" id="rd-carbs" placeholder="e.g. 12" min="0">
+          <label for="rd-carbs">Carbs (g)</label>
+          <input type="number" id="rd-carbs" placeholder="e.g. 12" min="0" inputmode="decimal">
         </div>
         <div class="form-group" style="margin:0;">
-          <label>Fat (g)</label>
-          <input type="number" id="rd-fat" placeholder="e.g. 18" min="0">
+          <label for="rd-fat">Fat (g)</label>
+          <input type="number" id="rd-fat" placeholder="e.g. 18" min="0" inputmode="decimal">
         </div>
       </div>
       <div id="rd-auto-estimate" style="margin-top:8px;font-size:11px;color:var(--accent);display:none;"></div>
@@ -1840,7 +1926,7 @@ body {
 
     <div style="margin-bottom:14px;">
       <div class="section-head">Tags</div>
-      <input type="text" id="rd-tags" placeholder="e.g. Quick, Fish, Weeknight" style="width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+      <input type="text" id="rd-tags" class="field" aria-label="Tags" placeholder="e.g. Quick, Fish, Weeknight">
     </div>
 
     <button class="btn-primary" onclick="saveRecipe()">Save recipe</button>
@@ -1850,13 +1936,13 @@ body {
 
 <!-- RECIPE VIEW MODAL (read mode) -->
 <div class="modal-overlay" id="recipe-view-modal" onclick="overlayClick(event,'recipe-view-modal')">
-  <div class="modal" style="max-height:92dvh;overflow-y:auto;">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rv-title" style="max-height:92dvh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;">
       <div>
         <div class="modal-title" id="rv-title" style="margin-bottom:2px;"></div>
         <div id="rv-source" style="font-size:11px;color:var(--text3);"></div>
       </div>
-      <button class="drawer-close" onclick="closeModal('recipe-view-modal')">✕</button>
+      <button class="drawer-close" onclick="closeModal('recipe-view-modal')" aria-label="Close">✕</button>
     </div>
 
     <div style="display:flex;gap:8px;margin-bottom:14px;" id="rv-macros"></div>
@@ -1875,21 +1961,21 @@ body {
       <button class="btn-primary" style="flex:1;" onclick="addRecipeToMeal()">＋ Add to current meal</button>
       <button class="btn-secondary" style="flex:1;" onclick="addRecipeAsMeal()">Use as whole meal</button>
     </div>
-    <button class="btn-secondary" style="margin-top:8px;color:var(--warn);border-color:var(--warn);" onclick="deleteRecipeFromView()">Delete recipe</button>
+    <button class="btn-secondary btn-danger" onclick="deleteRecipeFromView()">Delete recipe</button>
   </div>
 </div>
 
 <!-- LOG FOOD MODAL (add to diary) -->
 <div class="modal-overlay" id="log-food-modal" onclick="overlayClick(event,'log-food-modal')">
-  <div class="modal" style="height:82dvh;display:flex;flex-direction:column;">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="log-food-title" style="height:82dvh;display:flex;flex-direction:column;">
     <div class="modal-title" id="log-food-title">Add to Breakfast</div>
-    <div class="log-source-tabs">
-      <div class="log-source-tab active" onclick="logSourceTab('search',this)">Foods</div>
-      <div class="log-source-tab" onclick="logSourceTab('meals',this)">Meals</div>
-      <div class="log-source-tab" onclick="logSourceTab('recipes',this)">Recipes</div>
+    <div class="log-source-tabs" role="tablist">
+      <button class="log-source-tab active" role="tab" onclick="logSourceTab('search',this)">Foods</button>
+      <button class="log-source-tab" role="tab" onclick="logSourceTab('meals',this)">Meals</button>
+      <button class="log-source-tab" role="tab" onclick="logSourceTab('recipes',this)">Recipes</button>
     </div>
     <div id="log-search-pane">
-      <input type="text" class="food-search" id="log-search-input" placeholder="Search foods, or scan a barcode…" oninput="renderLogSearch()">
+      <input type="search" class="food-search" id="log-search-input" placeholder="Search foods, or scan a barcode…" aria-label="Search foods" autocomplete="off" oninput="renderLogSearch()">
       <button class="btn-secondary" style="margin:8px 0 4px;" onclick="openScanner()">📷 Scan a barcode</button>
       <button class="btn-secondary" style="margin:4px 0;" onclick="closeModal('log-food-modal');openClaudeLog(logTargetSlot)">💬 Describe or snap a meal (Claude)</button>
       <div id="log-recent" style="flex-shrink:0;"></div>
@@ -1907,28 +1993,28 @@ body {
 
 <!-- CLAUDE: DESCRIBE OR PHOTOGRAPH A MEAL -->
 <div class="modal-overlay" id="claude-log-modal" onclick="overlayClick(event,'claude-log-modal')">
-  <div class="modal" style="max-height:88dvh;overflow-y:auto;">
-    <div class="modal-title">Log with Claude</div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cl-title" style="max-height:88dvh;overflow-y:auto;">
+    <div class="modal-title" id="cl-title">Log with Claude</div>
     <div id="cl-input">
       <p class="cl-summary">Describe what you ate, add a photo of the food, or both. You'll review every item before anything is added.</p>
-      <textarea id="cl-text" class="cl-text" placeholder="e.g. 2 scrambled eggs, a slice of sourdough with butter, and a medium oat latte"></textarea>
+      <textarea id="cl-text" class="cl-text" aria-label="What did you eat?" placeholder="e.g. 2 scrambled eggs, a slice of sourdough with butter, and a medium oat latte"></textarea>
       <div class="cl-photo-row">
-        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cl-photo-camera').click()">📷 Take photo</button>
-        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cl-photo-input').click()">🖼️ Choose photo</button>
+        <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('cl-photo-camera').click()">📷 Take photo</button>
+        <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('cl-photo-input').click()">🖼️ Choose photo</button>
         <img id="cl-photo-preview" alt="" style="display:none;">
-        <a id="cl-photo-clear" href="javascript:void(0)" onclick="clearClaudeMealPhoto()" style="color:var(--text3);font-size:12px;display:none;">remove</a>
+        <button type="button" class="link-btn" id="cl-photo-clear" onclick="clearClaudeMealPhoto()" style="color:var(--text3);font-size:12px;display:none;">Remove photo</button>
         <input type="file" id="cl-photo-camera" accept="image/*" capture="environment" style="display:none;" onchange="onClaudeMealPhoto(event)">
         <input type="file" id="cl-photo-input" accept="image/*" style="display:none;" onchange="onClaudeMealPhoto(event)">
       </div>
       <div class="form-group">
-        <label>Meal, if you don't say</label>
-        <select id="cl-slot" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+        <label for="cl-slot">Meal, if you don't say</label>
+        <select id="cl-slot">
           <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
         </select>
       </div>
       <button class="btn-primary" id="cl-go" onclick="runClaudeMeal()">Analyze</button>
     </div>
-    <div id="cl-status" class="claude-status" style="display:none;"></div>
+    <div id="cl-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
     <div id="cl-review" style="display:none;">
       <div id="cl-summary" class="cl-summary"></div>
       <div id="cl-items"></div>
@@ -1943,22 +2029,22 @@ body {
 
 <!-- QUANTITY / CONFIRM LOG MODAL -->
 <div class="modal-overlay" id="qty-modal" onclick="overlayClick(event,'qty-modal')">
-  <div class="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qty-title">
     <div class="modal-title" id="qty-title">Add food</div>
     <div id="qty-macro-preview" class="qty-preview"></div>
     <div id="qty-micro-preview" class="qty-micro-preview"></div>
-    <div style="text-align:center;margin:-4px 0 10px;"><a href="#" onclick="editPendingFood();return false;" style="font-size:12px;color:var(--accent);">✎ Correct calories &amp; macros</a></div>
+    <div style="text-align:center;margin:-4px 0 10px;"><button class="link-btn" style="font-size:12px;" onclick="editPendingFood()">✎ Correct calories &amp; macros</button></div>
     <div class="form-group">
-      <label>Number of servings <span id="qty-serving-hint" style="color:var(--text3);font-weight:400;"></span></label>
+      <label for="qty-input">Number of servings <span id="qty-serving-hint" style="color:var(--text3);font-weight:400;"></span></label>
       <div class="qty-stepper">
-        <button onclick="qtyStep(-1)">−</button>
-        <input type="number" id="qty-input" value="1" min="0.25" step="0.25" oninput="renderQtyPreview()">
-        <button onclick="qtyStep(1)">+</button>
+        <button onclick="qtyStep(-1)" aria-label="Fewer servings">−</button>
+        <input type="number" id="qty-input" value="1" min="0.25" step="0.25" inputmode="decimal" oninput="renderQtyPreview()">
+        <button onclick="qtyStep(1)" aria-label="More servings">+</button>
       </div>
     </div>
     <div class="form-group">
-      <label>Meal</label>
-      <select id="qty-slot" style="width:100%;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:14px;font-family:'DM Sans',sans-serif;background:var(--surface2);color:var(--text);">
+      <label for="qty-slot">Meal</label>
+      <select id="qty-slot">
         <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
       </select>
     </div>
@@ -1968,13 +2054,13 @@ body {
 </div>
 
 <div class="modal-overlay" id="micros-modal" onclick="overlayClick(event,'micros-modal')">
-  <div class="modal" style="display:flex;flex-direction:column;max-height:92vh;overflow:hidden;">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="micros-title" style="display:flex;flex-direction:column;max-height:92dvh;overflow:hidden;">
     <div class="modal-title" id="micros-title" style="flex-shrink:0;">Edit food</div>
     <div style="flex:1 1 auto;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;">
-      <p style="font-size:12px;color:var(--text2);margin:-4px 0 10px;line-height:1.5;">All values are <b>per serving</b> — correct them to match the label. Saved to this food and applied to what you’ve already logged.</p>
+      <p class="note" style="margin:-4px 0 10px;">All values are <b>per serving</b> — correct them to match the label. Saved to this food and applied to what you’ve already logged.</p>
       <div id="macro-fields"></div>
       <div class="settings-label" style="margin-top:12px;">Vitamins &amp; minerals (optional)</div>
-      <p style="font-size:11px;color:var(--text3);margin:-2px 0 6px;line-height:1.45;">Enter an amount (mg/mcg) <b>or</b> a % from the label — type e.g. <b>20%</b> and it converts to the amount for you.</p>
+      <p class="note-sm" style="margin:-2px 0 6px;">Enter an amount (mg/mcg) <b>or</b> a % from the label — type e.g. <b>20%</b> and it converts to the amount for you.</p>
       <div id="micros-fields"></div>
       <div id="me-ingredients"></div>
     </div>
@@ -1987,10 +2073,10 @@ body {
 
 <!-- BARCODE SCANNER MODAL -->
 <div class="modal-overlay" id="scanner-modal" onclick="overlayClick(event,'scanner-modal')">
-  <div class="modal" style="max-height:92dvh;overflow-y:auto;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <div class="modal-title" style="margin:0;">Scan barcode</div>
-      <button class="drawer-close" onclick="closeScanner()">✕</button>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="scanner-title" style="max-height:92dvh;overflow-y:auto;">
+    <div class="row-between" style="margin-bottom:12px;">
+      <div class="modal-title" id="scanner-title" style="margin:0;">Scan barcode</div>
+      <button class="drawer-close" onclick="closeScanner()" aria-label="Close scanner">✕</button>
     </div>
     <div id="scanner-stage">
       <div class="scanner-viewport">
@@ -1999,7 +2085,7 @@ body {
       </div>
       <div id="scanner-status" class="scanner-status">Point your camera at a product barcode…</div>
       <div class="scanner-manual">
-        <input type="text" id="scanner-manual-input" inputmode="numeric" placeholder="…or type the barcode number">
+        <input type="text" id="scanner-manual-input" inputmode="numeric" aria-label="Barcode number" placeholder="…or type the barcode number">
         <button class="save-meal-btn" onclick="lookupManualBarcode()">Look up</button>
       </div>
     </div>
@@ -2009,10 +2095,10 @@ body {
 
 <!-- RECOMMENDATIONS MODAL -->
 <div class="modal-overlay" id="recommend-modal" onclick="overlayClick(event,'recommend-modal')">
-  <div class="modal" style="max-height:90dvh;overflow-y:auto;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-      <div class="modal-title" style="margin:0;">Recommended for you</div>
-      <button class="drawer-close" onclick="closeModal('recommend-modal')">✕</button>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="recommend-title" style="max-height:90dvh;overflow-y:auto;">
+    <div class="row-between" style="margin-bottom:6px;">
+      <div class="modal-title" id="recommend-title" style="margin:0;">Recommended for you</div>
+      <button class="drawer-close" onclick="closeModal('recommend-modal')" aria-label="Close">✕</button>
     </div>
     <p id="recommend-sub" style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;"></p>
     <div id="recommend-list"></div>
@@ -2020,7 +2106,7 @@ body {
 </div>
 
 <!-- TOAST -->
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -2387,8 +2473,8 @@ function markFoodUsed(id) { if (!id) return; ensureDataModel(); state.foodUsage[
 function foodIcon(o, px) {
   px = px || 24;
   const emoji = (o && o.emoji) ? o.emoji : '🍽️';
-  if (o && o.image) return `<img src="${escapeHtml(o.image)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:5px;vertical-align:middle;" onerror="this.replaceWith(document.createTextNode('${emoji}'))">`;
-  return emoji;
+  if (o && o.image) return `<img src="${escapeHtml(o.image)}" alt="" data-emoji="${escapeHtml(emoji)}" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:5px;vertical-align:middle;" onerror="this.replaceWith(document.createTextNode(this.dataset.emoji))">`;
+  return escapeHtml(emoji);
 }
 // Effective micronutrients for a food: its built-in data (USDA) merged with any
 // values the user typed (overrides win). Persisted, so future logs/scans carry them.
@@ -2403,7 +2489,24 @@ function foodMicros(f) {
 function acceptedFoods() { return allFoods().filter(f => state.ratings[f.id] === 'yes'); }
 
 // ════════════════════════════════════════ STORAGE ═════════════════════════════
-function saveState() { localStorage.setItem('plateiq_v1', JSON.stringify(state)); }
+// Write state to localStorage. A full store (QuotaExceededError — usually from
+// too many custom photos) is reported once instead of silently losing data.
+let _quotaWarned = false, _cloudPushTimer = null;
+function persistLocal() {
+  try { localStorage.setItem('plateiq_v1', JSON.stringify(state)); _quotaWarned = false; }
+  catch (e) {
+    if (!_quotaWarned) { _quotaWarned = true; toast('Storage is full — remove some custom photos or foods'); }
+    console.error('saveState failed', e);
+  }
+}
+// Every local save also schedules a debounced push to the cloud (when signed in).
+function saveState() {
+  persistLocal();
+  if (sbAuthed()) {
+    if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
+    _cloudPushTimer = setTimeout(() => { _cloudPushTimer = null; pushCloud(); }, 2500);
+  }
+}
 // Record a deletion so a later cloud sync won't merge the item back in. Keyed
 // "type:id" with the deletion time; re-creating an item (which bumps its
 // foodUsage / uses a fresh id) overrides the tombstone.
@@ -2446,10 +2549,15 @@ function updateTargetDisplay() {
   document.getElementById('mc-fat-target').textContent = '/ ' + Math.round(t.fat/state.settings.mealsPerDay) + 'g';
 }
 
+function clampNum(v, lo, hi, fallback) { v = parseFloat(v); return isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback; }
 function saveSettings() {
-  state.settings.weight = +document.getElementById('s-weight').value;
-  state.settings.height = +document.getElementById('s-height').value;
-  state.settings.age = +document.getElementById('s-age').value;
+  const s = state.settings;
+  s.weight = clampNum(document.getElementById('s-weight').value, 50, 700, s.weight);
+  s.height = clampNum(document.getElementById('s-height').value, 36, 96, s.height);
+  s.age = clampNum(document.getElementById('s-age').value, 10, 110, s.age);
+  document.getElementById('s-weight').value = s.weight;
+  document.getElementById('s-height').value = s.height;
+  document.getElementById('s-age').value = s.age;
   state.settings.sex = document.getElementById('s-sex').value;
   state.settings.activity = +document.getElementById('s-activity').value;
   saveState();
@@ -2479,6 +2587,8 @@ function loadSettingsUI() {
   document.getElementById('s-age').value = s.age;
   document.getElementById('s-sex').value = s.sex;
   document.getElementById('s-activity').value = s.activity;
+  const w = document.getElementById('s-water'); if (w) w.value = s.waterGoal || 64;
+  document.querySelectorAll('#theme-chips .chip').forEach(c => c.classList.toggle('active', c.dataset.theme === (s.theme || 'auto')));
   document.querySelectorAll('#goal-chips .chip').forEach(c => {
     c.classList.toggle('active', +c.dataset.goal === s.goalOffset);
   });
@@ -2488,27 +2598,47 @@ function loadSettingsUI() {
   updateTargetDisplay();
 }
 
-function openSettings() { document.getElementById('settings-overlay').classList.add('open'); }
-function closeSettings() { document.getElementById('settings-overlay').classList.remove('open'); }
+// Appearance: 'auto' follows the OS, 'light'/'dark' force a scheme. The <head>
+// applies the stored choice before first paint so there's no flash.
+function applyTheme() {
+  const t = (state.settings && state.settings.theme) || 'auto';
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+  const dark = t === 'dark' || (t === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#1E2220' : '#2D6A4F';
+  document.querySelectorAll('#theme-chips .chip').forEach(c => c.classList.toggle('active', c.dataset.theme === t));
+}
+function selectTheme(el) {
+  state.settings.theme = el.dataset.theme || 'auto';
+  saveState(); applyTheme();
+}
+if (window.matchMedia) { try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme()); } catch (e) {} }
+
+function openSettings() {
+  renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); renderNutritionixSettings();
+  openModalById('settings-overlay');
+}
+function closeSettings() { closeModal('settings-overlay'); }
 
 // ════════════════════════════════════════ NAVIGATION ══════════════════════════
 function switchTab(id, el) {
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(t=>t.classList.remove('active'));
-  document.getElementById('screen-'+id).classList.add('active');
-  el.classList.add('active');
-  if (id === 'foods') foodsEntry();
-  if (id === 'builder') renderBuilder();
-  if (id === 'planner') renderPlanner();
-  if (id === 'history') renderHistory();
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+  const scr = document.getElementById('screen-' + id); if (scr) scr.classList.add('active');
+  const tab = el || document.querySelector(`.tab-btn[data-tab="${id}"]`);
+  if (tab) { tab.classList.add('active'); tab.setAttribute('aria-selected', 'true'); }
+  if (id === 'today') renderDiary();
+  else if (id === 'foods') foodsEntry();
+  else if (id === 'builder') renderBuilder();
+  else if (id === 'planner') renderPlanner();
+  else if (id === 'history') renderHistory();
+  window.scrollTo(0, 0);
 }
 
+// Tapping the dimmed backdrop closes the sheet (and stops the camera if it was the scanner).
 function overlayClick(e, id) {
-  if (e.target === document.getElementById(id)) {
-    document.getElementById(id).classList.remove('open');
-  }
+  if (e.target === document.getElementById(id)) closeModal(id);
 }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function toast(msg) {
   const t = document.getElementById('toast');
@@ -2566,7 +2696,7 @@ function renderSwipeCard() {
   document.getElementById('card-name').textContent = food.name;
   document.getElementById('card-category').textContent = food.category + ' · ' + (food.serving || '');
   const tagsEl = document.getElementById('card-tags');
-  tagsEl.innerHTML = (food.tags || []).map(t=>`<span class="card-tag">${t}</span>`).join('');
+  tagsEl.innerHTML = (food.tags || []).map(t=>`<span class="card-tag">${escapeHtml(t)}</span>`).join('');
   document.getElementById('card-macros').innerHTML = `
     <span><b>${food.kcal}</b>cal</span>
     <span><b>${food.protein}g</b>protein</span>
@@ -2602,40 +2732,41 @@ function doSwipe(dir) {
   }, 350);
 }
 
-// drag support
-let dragStartX = 0, dragStartY = 0, dragging = false;
+// Drag-to-rate. Listeners are attached once (not on every render), and the
+// window-level mouse handlers are scoped so they don't clobber other code.
+let dragStartX = 0, dragging = false, dragBound = false;
 function setupDrag() {
   const card = document.getElementById('food-card');
   card.style.transform = '';
-  const ly = document.getElementById('label-yes');
-  const ln = document.getElementById('label-no');
-  ly.style.opacity = '0'; ln.style.opacity = '0';
-
-  function start(cx) { dragStartX = cx; dragging = true; card.classList.add('dragging'); }
-  function move(cx) {
+  document.getElementById('label-yes').style.opacity = '0';
+  document.getElementById('label-no').style.opacity = '0';
+  if (dragBound) return;
+  dragBound = true;
+  const ly = document.getElementById('label-yes'), ln = document.getElementById('label-no');
+  const start = (cx) => { dragStartX = cx; dragging = true; card.classList.add('dragging'); };
+  const move = (cx) => {
     if (!dragging) return;
     const dx = cx - dragStartX;
-    const rot = dx * 0.06;
-    card.style.transform = `translateX(${dx}px) rotate(${rot}deg)`;
-    const ratio = Math.min(Math.abs(dx)/80, 1);
+    card.style.transform = `translateX(${dx}px) rotate(${dx * 0.06}deg)`;
+    const ratio = Math.min(Math.abs(dx) / 80, 1);
     ly.style.opacity = dx > 20 ? ratio : 0;
     ln.style.opacity = dx < -20 ? ratio : 0;
-  }
-  function end(cx) {
+  };
+  const end = (cx) => {
     if (!dragging) return;
     dragging = false;
     card.classList.remove('dragging');
     const dx = cx - dragStartX;
     if (dx > 70) doSwipe('yes');
     else if (dx < -70) doSwipe('no');
-    else { card.style.transform = ''; document.getElementById('label-yes').style.opacity='0'; document.getElementById('label-no').style.opacity='0'; }
-  }
-  card.onmousedown = e => start(e.clientX);
-  window.onmousemove = e => move(e.clientX);
-  window.onmouseup = e => end(e.clientX);
-  card.ontouchstart = e => start(e.touches[0].clientX);
-  card.ontouchmove = e => { e.preventDefault(); move(e.touches[0].clientX); };
-  card.ontouchend = e => end(e.changedTouches[0].clientX);
+    else { card.style.transform = ''; ly.style.opacity = '0'; ln.style.opacity = '0'; }
+  };
+  card.addEventListener('mousedown', e => start(e.clientX));
+  window.addEventListener('mousemove', e => { if (dragging) move(e.clientX); });
+  window.addEventListener('mouseup', e => end(e.clientX));
+  card.addEventListener('touchstart', e => start(e.touches[0].clientX), { passive: true });
+  card.addEventListener('touchmove', e => { e.preventDefault(); move(e.touches[0].clientX); }, { passive: false });
+  card.addEventListener('touchend', e => end(e.changedTouches[0].clientX));
 }
 
 function showView(v) {
@@ -2678,14 +2809,14 @@ function renderFoodsList(filter) {
     return `
     <div class="food-list-item">
       <span class="fli-emoji">${foodIcon(f, 26)}</span>
-      <div class="fli-info" onclick="openMicrosEditor('${f.id}')" style="cursor:pointer;">
+      <div class="fli-info" role="button" tabindex="0" onclick="openMicrosEditor('${f.id}')" style="cursor:pointer;">
         <div class="fli-name">${escapeHtml(f.name)} ${hasMicros ? '🧬' : '<span style="color:var(--text3);font-weight:400;font-size:11px;">✎ edit</span>'}</div>
-        <div class="fli-macros">${f.serving||''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
+        <div class="fli-macros">${escapeHtml(f.serving||'')} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div>
       </div>
       <label class="fli-snack" title="Recommend as a snack" onclick="event.stopPropagation();">
         <input type="checkbox" ${isSnackFood(f) ? 'checked' : ''} onchange="toggleSnackFromList('${f.id}', this.checked)"> snack
       </label>
-      <span onclick="deleteFoodFromList('${f.id}')" title="Delete" style="cursor:pointer;padding:4px 6px;color:var(--text3);font-size:15px;">🗑</span>
+      <button type="button" onclick="deleteFoodFromList('${f.id}')" title="Delete" aria-label="Delete ${escapeHtml(f.name)}" style="padding:6px;color:var(--text3);font-size:15px;">🗑</button>
     </div>`;
   }).join('');
 }
@@ -2694,9 +2825,9 @@ function foodAddRow(f, already) {
   return `<div class="food-list-item">
     <span class="fli-emoji">${foodIcon(f, 26)}</span>
     <div class="fli-info"><div class="fli-name">${escapeHtml(f.name)}${f.brand ? ' · ' + escapeHtml(f.brand) : ''}</div>
-      <div class="fli-macros">${f.serving || ''} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div></div>
+      <div class="fli-macros">${escapeHtml(f.serving || '')} · ${f.kcal} cal · ${f.protein}g P · ${f.carbs}g C · ${f.fat}g F</div></div>
     ${already ? '<span class="fli-badge badge-yes">✓ eat</span>'
-      : `<span onclick="addLocalToWillEat('${f.id}')" style="cursor:pointer;color:var(--accent);font-weight:600;padding:4px 8px;white-space:nowrap;">＋ add</span>`}
+      : `<button type="button" onclick="addLocalToWillEat('${f.id}')" style="color:var(--accent);font-weight:600;padding:6px 8px;white-space:nowrap;">＋ add</button>`}
   </div>`;
 }
 function searchFoodsToAdd() {
@@ -2809,13 +2940,13 @@ function invRow(it) {
   const dl = invDaysLeft(it);
   const bbText = it.bestBy ? ('best by ' + new Date(it.bestBy + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : 'no date';
   return `<div class="food-list-item" style="${st.length ? 'border-left:3px solid ' + (st[0].color) + ';' : ''}">
-    <div class="fli-info" onclick="openAddInventory('${it.id}')" style="cursor:pointer;">
+    <div class="fli-info" role="button" tabindex="0" onclick="openAddInventory('${it.id}')" style="cursor:pointer;">
       <div class="fli-name">${escapeHtml(it.name)} ${badges}</div>
       <div class="fli-macros">${fmtQty(it.qty)}${it.unit ? ' ' + escapeHtml(it.unit) : ''} · ${bbText}${dl != null && dl >= 0 && dl <= 14 ? ' · ' + dl + 'd left' : ''}</div>
     </div>
-    <span onclick="invAdjust('${it.id}',-1)" title="Use one" style="cursor:pointer;padding:4px 9px;font-size:17px;color:var(--text2);">−</span>
-    <span onclick="invAdjust('${it.id}',1)" title="Add one" style="cursor:pointer;padding:4px 9px;font-size:16px;color:var(--accent);">＋</span>
-    <span onclick="deleteInventory('${it.id}')" title="Delete" style="cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);">🗑</span>
+    <button type="button" onclick="invAdjust('${it.id}',-1)" title="Use one" aria-label="Use one" style="padding:6px 9px;font-size:17px;color:var(--text2);">−</button>
+    <button type="button" onclick="invAdjust('${it.id}',1)" title="Add one" aria-label="Add one" style="padding:6px 9px;font-size:16px;color:var(--accent);">＋</button>
+    <button type="button" onclick="deleteInventory('${it.id}')" title="Delete" aria-label="Delete" style="padding:6px;font-size:14px;color:var(--text3);">🗑</button>
   </div>`;
 }
 function renderInvAlerts() {
@@ -2839,9 +2970,9 @@ function renderInventory() {
 function renderInventoryTodayAlert() {
   const el = document.getElementById('inv-today-alert'); if (!el) return;
   const alerts = inventoryAlerts();
-  if (!alerts.length) { el.style.display = 'none'; return; }
+  el.hidden = !alerts.length;
+  if (!alerts.length) return;
   const names = alerts.slice(0, 3).map(it => escapeHtml(it.name)).join(', ');
-  el.style.display = 'block';
   el.innerHTML = `⚠️ <b>${alerts.length}</b> inventory item${alerts.length > 1 ? 's' : ''} low or expiring: ${names}${alerts.length > 3 ? '…' : ''} <span style="text-decoration:underline;">View</span>`;
 }
 // Quick snack toggle from the Foods list — checked = recommend as a snack.
@@ -3020,7 +3151,7 @@ function openMicrosEditor(foodId) {
        <div style="display:flex;align-items:center;gap:8px;">
          <span id="me-icon-preview" style="width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;">${foodIcon({ emoji: f.emoji || '🍽️', image: microsEditImage }, 40)}</span>
          <input type="text" id="me-emoji" value="${escapeHtml(f.emoji || '')}" placeholder="🍽️" maxlength="4" style="width:52px;text-align:center;font-size:20px;" oninput="onEmojiEdit()">
-         <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('me-photo-input').click()">📷 Photo</button>
+         <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('me-photo-input').click()">📷 Photo</button>
          <a id="me-photo-clear" href="javascript:void(0)" onclick="clearPhoto()" style="color:var(--text3);font-size:12px;display:${microsEditImage ? 'inline' : 'none'};">use emoji</a>
          <input type="file" id="me-photo-input" accept="image/*" style="display:none;" onchange="onPhotoPick(event)">
        </div></div>
@@ -3140,7 +3271,7 @@ function openAddFood() {
   addFoodMicros = null;
   document.getElementById('cf-label-status').style.display = 'none';
   updateAddFoodIcon();
-  document.getElementById('add-food-modal').classList.add('open');
+  openModalById('add-food-modal');
 }
 
 function saveCustomFood() {
@@ -3195,61 +3326,6 @@ function builderView(v, el) {
   if (v==='recipes') renderRecipesList();
 }
 
-function calcMealMacros() {
-  let kcal=0,protein=0,carbs=0,fat=0;
-  state.currentMeal.forEach(item => {
-    const f = getFood(item.foodId);
-    if (!f) return;
-    kcal += f.kcal * item.qty;
-    protein += f.protein * item.qty;
-    carbs += f.carbs * item.qty;
-    fat += f.fat * item.qty;
-  });
-  return {kcal:Math.round(kcal),protein:Math.round(protein),carbs:Math.round(carbs),fat:Math.round(fat)};
-}
-
-function renderBuilder() {
-  updateTargetDisplay();
-  const m = calcMealMacros();
-  const t = calcTDEE();
-  const mpt = state.settings.mealsPerDay;
-  document.getElementById('meal-kcal-used').textContent = m.kcal + ' cal';
-  document.getElementById('mc-protein').textContent = m.protein + 'g';
-  document.getElementById('mc-carbs').textContent = m.carbs + 'g';
-  document.getElementById('mc-fat').textContent = m.fat + 'g';
-  document.getElementById('mc-protein-bar').style.width = Math.min(m.protein/(t.protein/mpt)*100,100)+'%';
-  document.getElementById('mc-carbs-bar').style.width = Math.min(m.carbs/(t.carbs/mpt)*100,100)+'%';
-  document.getElementById('mc-fat-bar').style.width = Math.min(m.fat/(t.fat/mpt)*100,100)+'%';
-
-  const el = document.getElementById('meal-items');
-  if (state.currentMeal.length === 0) {
-    el.innerHTML = `<div style="text-align:center;padding:16px;font-size:13px;color:var(--text3);">No foods added yet.</div>`;
-    return;
-  }
-  el.innerHTML = state.currentMeal.map((item,i) => {
-    const f = getFood(item.foodId);
-    if (!f) return '';
-    return `<div class="meal-item">
-      <span class="mi-emoji">${foodIcon(f, 24)}</span>
-      <div class="mi-info">
-        <div class="mi-name">${f.name}</div>
-        <div class="mi-macros">${Math.round(f.kcal*item.qty)} cal · ${Math.round(f.protein*item.qty)}g P · ${Math.round(f.carbs*item.qty)}g C · ${Math.round(f.fat*item.qty)}g F</div>
-      </div>
-      <div class="mi-qty">
-        <div class="qty-btn" onclick="adjustQty(${i},-1)">−</div>
-        <div class="qty-val">${item.qty}</div>
-        <div class="qty-btn" onclick="adjustQty(${i},1)">+</div>
-      </div>
-      <div class="mi-remove" onclick="removeMealItem(${i})">✕</div>
-    </div>`;
-  }).join('');
-}
-
-function adjustQty(i, delta) {
-  state.currentMeal[i].qty = Math.max(0.5, state.currentMeal[i].qty + delta * 0.5);
-  renderBuilder();
-}
-
 function removeMealItem(i) {
   state.currentMeal.splice(i,1);
   renderBuilder();
@@ -3260,7 +3336,7 @@ function openFoodPicker(target) {
   foodPickerTarget = target || 'meal';
   document.getElementById('food-search-input').value = '';
   filterFoodPicker();
-  document.getElementById('food-picker-modal').classList.add('open');
+  openModalById('food-picker-modal');
 }
 
 // ════════════════════════════════════════ RECIPE BUILDER ══════════════════════
@@ -3321,8 +3397,8 @@ function renderRecipeBuilder() {
       <span class="mi-emoji">${foodIcon(f, 24)}</span>
       <div class="mi-info"><div class="mi-name">${escapeHtml(f.name)}</div>
         <div class="mi-macros">${Math.round((f.kcal||0)*it.qty)} cal · ${Math.round((f.protein||0)*it.qty)}g P · ${Math.round((f.carbs||0)*it.qty)}g C · ${Math.round((f.fat||0)*it.qty)}g F</div></div>
-      <div class="mi-qty"><div class="qty-btn" onclick="rbAdjustQty(${i},-1)">−</div><div class="qty-val">${it.qty}</div><div class="qty-btn" onclick="rbAdjustQty(${i},1)">+</div></div>
-      <div class="mi-remove" onclick="rbRemove(${i})">✕</div>
+      <div class="mi-qty"><button type="button" class="qty-btn" onclick="rbAdjustQty(${i},-1)" aria-label="Less">−</button><div class="qty-val">${it.qty}</div><button type="button" class="qty-btn" onclick="rbAdjustQty(${i},1)" aria-label="More">+</button></div>
+      <button type="button" class="mi-remove" onclick="rbRemove(${i})" aria-label="Remove">✕</button>
     </div>`;
   }).join('') : `<div style="text-align:center;padding:12px;font-size:13px;color:var(--text3);">No foods yet — add some below, or enter per-serving macros.</div>`;
 }
@@ -3379,14 +3455,14 @@ function filterFoodPicker() {
   const el = document.getElementById('food-pick-list');
   const foods = acceptedFoods().filter(f => foodMatches(f, q));
   const localHtml = foods.map(f => `
-    <div class="food-pick-item" onclick="addFoodToMeal('${f.id}')">
+    <button type="button" class="food-pick-item" onclick="addFoodToMeal('${f.id}')">
       <span class="fpi-emoji">${foodIcon(f, 22)}</span>
       <div class="fpi-info">
         <div class="fpi-name">${escapeHtml(f.name)}</div>
-        <div class="fpi-macros">${f.serving} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
+        <div class="fpi-macros">${escapeHtml(f.serving)} · ${f.kcal} cal · P:${f.protein}g C:${f.carbs}g F:${f.fat}g</div>
       </div>
       <span class="fpi-add">+</span>
-    </div>`).join('');
+    </button>`).join('');
   if (pickerSearchTimer) clearTimeout(pickerSearchTimer);
   if (q.length < 2) {
     el.innerHTML = localHtml || `<div style="text-align:center;padding:20px;font-size:13px;color:var(--text3);">Type to search USDA + Open Food Facts, or rate foods in the Foods tab.</div>`;
@@ -3398,13 +3474,6 @@ function filterFoodPicker() {
   pickerSearchTimer = setTimeout(() => searchDatabasesInto('picker-db-results', q, seq, 'addOffToMeal'), 350);
 }
 
-function addFoodToMeal(foodId) {
-  const existing = state.currentMeal.find(i=>i.foodId===foodId);
-  if (existing) existing.qty += 1;
-  else state.currentMeal.push({foodId, qty:1});
-  closeModal('food-picker-modal');
-  renderBuilder();
-}
 async function addOffToMeal(id) {
   let f = offCache[id]; if (!f) return;
   ensureDataModel();
@@ -3413,21 +3482,6 @@ async function addOffToMeal(id) {
   state.ratings[f.id] = 'yes'; markFoodUsed(f.id); // also keep it in your Will-Eat list
   saveState();
   addFoodToMeal(f.id);
-}
-
-function saveMeal() {
-  if (state.currentMeal.length === 0) { toast('Add some foods first'); return; }
-  const name = document.getElementById('meal-name-input').value.trim() || 'Meal ' + (state.savedMeals.length+1);
-  const m = calcMealMacros();
-  state.savedMeals.push({
-    id: 'm_'+Date.now(),
-    name,
-    items: JSON.parse(JSON.stringify(state.currentMeal)),
-    ...m
-  });
-  saveState();
-  toast('✓ "' + name + '" saved!');
-  document.getElementById('meal-name-input').value = '';
 }
 
 function renderSavedMeals() {
@@ -3440,12 +3494,13 @@ function renderSavedMeals() {
   el.innerHTML = state.savedMeals.map((meal,i) => `
     <div class="saved-meal-card">
       <div class="smc-header">
-        <span class="smc-name">${meal.name}</span>
+        <span class="smc-name">${escapeHtml(meal.name)} ${meal.auto ? '<span class="fli-badge badge-auto" title="Saved automatically from your diary">auto</span>' : ''}</span>
         <span class="smc-cals">${meal.kcal} cal</span>
       </div>
       <div class="smc-macros" style="margin-bottom:8px;">P:${meal.protein}g · C:${meal.carbs}g · F:${meal.fat}g · ${meal.items.length} foods</div>
       <div class="smc-actions">
-        <button class="smc-use" onclick="loadMeal(${i})">Edit</button>
+        <button class="smc-use" onclick="logSavedMeal(${i})">＋ Log</button>
+        <button class="smc-log" onclick="loadMeal(${i})">Edit</button>
         <button class="smc-del" onclick="deleteMeal(${i})">Delete</button>
         <label class="fli-snack" title="Recommend as a snack" style="margin-left:auto;">
           <input type="checkbox" ${state.preferSnack[meal.id] ? 'checked' : ''} onchange="toggleSnackFromList('${meal.id}', this.checked)"> snack
@@ -3455,6 +3510,7 @@ function renderSavedMeals() {
   `).join('');
 }
 
+function logSavedMeal(i) { logTargetSlot = defaultSlot(); logMeal(i); }
 let editingMealId = null;
 function loadMeal(i) {
   const meal = state.savedMeals[i]; if (!meal) return;
@@ -3507,9 +3563,9 @@ function getWeekDays(offset) {
   });
 }
 
-function dateKey(d) {
-  return d.toISOString().slice(0,10);
-}
+// Local-calendar day key (the old UTC-based key shifted a day for evening use
+// west of Greenwich, so planner days didn't line up with the diary's).
+function dateKey(d) { return dkey(d); }
 
 function changeWeek(delta) {
   weekOffset += delta;
@@ -3585,12 +3641,10 @@ function renderDays(days) {
 
   container.innerHTML = days.map((d,di) => {
     const k = dateKey(d);
-    if (!state.planner[k]) state.planner[k] = {meals: slots.map(s=>({slotName:s,mealId:null}))};
-    // ensure slot count matches
-    const plan = state.planner[k];
-    slots.forEach(s => {
-      if (!plan.meals.find(m=>m.slotName===s)) plan.meals.push({slotName:s,mealId:null});
-    });
+    // Read-only view: every active slot is shown, but empty slots aren't written
+    // back into state (that used to bloat every save with blank weeks).
+    const saved = (state.planner[k] && state.planner[k].meals) || [];
+    const plan = { meals: slots.map(s => saved.find(m => m.slotName === s) || { slotName: s, mealId: null }) };
 
     let dayKcal = 0, dayP = 0, dayC = 0, dayF = 0;
     plan.meals.filter(sl=>sl.mealId).forEach(sl => {
@@ -3602,7 +3656,7 @@ function renderDays(days) {
     const calClass = dayKcal > t.kcal*1.1 ? 'over' : dayKcal > 0 ? 'ok' : '';
 
     return `<div class="day-card">
-      <div class="day-header-row" onclick="toggleDay('day-body-${di}')">
+      <div class="day-header-row" role="button" tabindex="0" onclick="toggleDay('day-body-${di}')">
         <div class="day-name-group">
           <span class="day-name">${dayNames[di]}${isToday?' 📍':''}</span>
           <span class="day-date">${d.toLocaleDateString('en',{month:'short',day:'numeric'})}</span>
@@ -3628,11 +3682,11 @@ function renderDays(days) {
             <div class="dmr-dot" style="background:${SLOT_COLORS[si%SLOT_COLORS.length]}"></div>
             <span class="dmr-type">${slot.slotName}</span>
             ${named
-              ? `<span class="dmr-foods">${isRecipe?'📄 ':''}${named.name}</span>
+              ? `<span class="dmr-foods">${isRecipe?'📄 ':''}${escapeHtml(named.name)}</span>
                  <span class="dmr-cals">${macros.kcal>0?macros.kcal+' cal':''}</span>
-                 <span class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')">↻</span>`
+                 <button type="button" class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')" aria-label="Change ${slot.slotName}">↻</button>`
               : `<span class="dmr-foods" style="color:var(--text3)">Empty</span>
-                 <span class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')">+ Add</span>`}
+                 <button type="button" class="dmr-assign" onclick="openMealAssign('${k}','${slot.slotName}')">+ Add</button>`}
           </div>`;
         }).join('')}
       </div>
@@ -3642,7 +3696,7 @@ function renderDays(days) {
 
 function toggleDay(id) {
   const el = document.getElementById(id);
-  if (el) el.style.display = 'block';
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 // ════════════════════════════════════════ EXPORT / IMPORT ═════════════════════
@@ -3670,6 +3724,8 @@ function handleImport(e) {
   reader.onload = ev => {
     try {
       const imported = JSON.parse(ev.target.result);
+      if (!imported || typeof imported !== 'object' || Array.isArray(imported) || !(imported.settings || imported.diary || imported.customFoods)) { toast('That file isn’t a PlateIQ backup'); return; }
+      delete imported.sync; // never let a file overwrite the live sign-in
       if (!confirm('Restore this backup? It overwrites your diary, settings and foods on this device — your cloud sign-in stays.')) return;
       // Merge the backup over current state so the live sync session (not in the
       // file) is preserved; backed-up data keys win.
@@ -3686,8 +3742,8 @@ function handleImport(e) {
   e.target.value = '';
 }
 
-function exportXLSX() {
-  // A CSV Excel opens perfectly, built from the tracking data: food diary,
+function exportCSV() {
+  // A UTF-8 CSV that Excel, Numbers and Sheets open directly: food diary,
   // daily totals vs. goals, steps/energy, and micronutrient status.
   ensureDataModel();
   const goals = calcTDEE();
@@ -3751,11 +3807,12 @@ function exportXLSX() {
   a.download = `plateiq-${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  toast('\u2713 Exported \u2014 open in Excel');
+  toast('Exported as CSV \u2014 opens in Excel, Numbers or Sheets');
 }
 function resetAll() {
-  if (!confirm('Delete ALL data? This cannot be undone.')) return;
+  if (!confirm('Delete ALL data on this device? This cannot be undone. (Data already synced to the cloud stays there until you sign in and sync again.)')) return;
   localStorage.removeItem('plateiq_v1');
+  localStorage.removeItem('plateiq_mfp');
   location.reload();
 }
 
@@ -3786,9 +3843,13 @@ function parseCSV(text) {
   return lines.slice(1).map(line => {
     const vals = [];
     let cur = '', inQ = false;
-    for (const ch of line) {
-      if (ch==='"') { inQ=!inQ; }
-      else if (ch===',' && !inQ) { vals.push(cur.trim()); cur=''; }
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
+        else inQ = !inQ;
+      }
+      else if (ch === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
       else cur += ch;
     }
     vals.push(cur.trim());
@@ -3924,6 +3985,7 @@ function historyView(type, el) {
 }
 
 function renderHistory() {
+  renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyByTime(); renderEnergyInsights();
   renderHistoryNutrition();
   renderHistoryExercise();
   renderHistoryMeasurements();
@@ -3960,8 +4022,8 @@ function renderHistoryNutrition() {
     return `<div class="day-card" style="margin-bottom:8px;">
       <div class="day-header-row" style="cursor:default;">
         <div class="day-name-group">
-          <span class="day-name">${d.date}</span>
-          <span class="day-date">${d.meals||''}</span>
+          <span class="day-name">${escapeHtml(d.date)}</span>
+          <span class="day-date">${escapeHtml(d.meals||'')}</span>
         </div>
         <span class="day-cals ${d.kcal>t.kcal*1.1?'over':'ok'}">${d.kcal.toLocaleString()} cal</span>
       </div>
@@ -3971,7 +4033,7 @@ function renderHistoryNutrition() {
         <div class="dmb-seg" style="background:var(--fat);flex:${d.fat||1}"></div>
       </div>
       <div class="day-meal-row" style="border-top:none;padding:8px 14px;">
-        <span style="font-size:11px;color:var(--text3);">P: ${d.protein}g &nbsp; C: ${d.carbs}g &nbsp; F: ${d.fat}g &nbsp; <span style="font-size:10px;padding:2px 6px;border-radius:999px;background:${barColor}20;color:${barColor};">${pct}% of target</span></span>
+        <span style="font-size:11px;color:var(--text3);">P: ${d.protein}g &nbsp; C: ${d.carbs}g &nbsp; F: ${d.fat}g &nbsp; <span style="font-size:10px;padding:1px 7px;border-radius:999px;border:1px solid ${barColor};color:${barColor};">${pct}% of target</span></span>
       </div>
     </div>`;
   }).join('');
@@ -3994,13 +4056,13 @@ function renderHistoryExercise() {
     const totalMin = entries.reduce((s,e)=>s+e.minutes,0);
     return `<div class="day-card" style="margin-bottom:8px;">
       <div class="day-header-row" style="cursor:default;">
-        <span class="day-name">${date}</span>
+        <span class="day-name">${escapeHtml(date)}</span>
         <span style="font-size:12px;color:var(--accent);font-weight:600;">${totalCal>0?'-'+totalCal+' cal':''}</span>
       </div>
       ${entries.map(e=>`<div class="day-meal-row">
         <div class="dmr-dot" style="background:var(--carb);"></div>
-        <span class="dmr-type">${e.type||'Cardio'}</span>
-        <span class="dmr-foods">${e.exercise}</span>
+        <span class="dmr-type">${escapeHtml(e.type||'Cardio')}</span>
+        <span class="dmr-foods">${escapeHtml(e.exercise)}</span>
         <span class="dmr-cals">${e.minutes>0?e.minutes+'min':''}</span>
       </div>`).join('')}
     </div>`;
@@ -4022,17 +4084,13 @@ function renderHistoryMeasurements() {
     return `<div class="food-list-item" style="margin-bottom:6px;">
       <span class="fli-emoji">${m.weight?'⚖️':m.steps?'👟':'📏'}</span>
       <div class="fli-info">
-        <div class="fli-name">${m.date}</div>
+        <div class="fli-name">${escapeHtml(m.date)}</div>
         <div class="fli-macros">${parts.join(' · ')}</div>
       </div>
     </div>`;
   }).join('');
 }
 
-// ════════════════════════════════════════ GOOGLE DRIVE ═══════════════════════
-// Google Drive via file picker — no OAuth server needed.
-// Uses the Google Drive file picker API with a popup, saves/loads JSON backup.
-// User needs to configure CLIENT_ID from Google Cloud Console (free).
 // ════════════════════════════════════════ SMART PORTIONING ═══════════════════
 // Given a food or recipe, returns the qty multiplier that best fills the
 // current meal's remaining calorie budget (based on daily target ÷ meals/day).
@@ -4070,7 +4128,7 @@ function openRecipeUpload() {
   document.getElementById('recipe-pdf-file').value = '';
   document.getElementById('recipe-paste-text').value = '';
   recipeInputMode('pdf', document.getElementById('rtab-pdf'));
-  document.getElementById('recipe-upload-modal').classList.add('open');
+  openModalById('recipe-upload-modal');
 }
 
 function recipeInputMode(mode, el) {
@@ -4194,11 +4252,21 @@ function estimateMacrosFromIngredients(ingredLines, servings) {
   let totKcal = 0, totP = 0, totC = 0, totF = 0, matched = 0;
   const foods = allFoods();
 
+  const reEsc = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordIn = (word, text) => new RegExp('\\b' + reEsc(word) + '\\b', 'i').test(text);
   ingredLines.forEach(line => {
     const lower = line.toLowerCase();
-    // Try to find a library food whose name appears in the line
-    const match = foods.find(f => lower.includes(f.name.toLowerCase().split(' ')[0]) ||
-      lower.includes(f.name.toLowerCase()));
+    // Match a library food whose whole name appears as a phrase in the line, or
+    // whose first word does when it's distinctive (≥5 letters — "chicken", not
+    // "raw" or "bell"). Prefer the longest such name so "ground beef" beats "beef".
+    let match = null;
+    foods.forEach(f => {
+      const n = (f.name || '').toLowerCase(); if (!n) return;
+      const first = n.split(' ')[0];
+      if (wordIn(n, lower) || (first.length >= 5 && wordIn(first, lower))) {
+        if (!match || n.length > match.name.length) match = f;
+      }
+    });
     if (!match) return;
     // Try to parse a quantity multiplier from the line (e.g. "2 fillets", "4 oz")
     const qtyMatch = line.match(/^([\d.½¼¾⅓⅔]+)/);
@@ -4261,10 +4329,10 @@ function openRecipeDetailModal(parsed) {
   document.getElementById('rd-tags').value = (parsed.tags || []).join(', ');
 
   document.getElementById('rd-ingredients').innerHTML =
-    (parsed.ingredients || []).map(i => `• ${i}`).join('<br>') || '<em style="color:var(--text3)">None detected</em>';
+    (parsed.ingredients || []).map(i => `• ${escapeHtml(i)}`).join('<br>') || '<em style="color:var(--text3)">None detected</em>';
 
   document.getElementById('rd-instructions').innerHTML =
-    (parsed.instructions || []).map((s, i) => `<b>Step ${i+1}.</b> ${s}`).join('<br><br>') || '<em style="color(var(--text3))">None detected</em>';
+    (parsed.instructions || []).map((s, i) => `<b>Step ${i+1}.</b> ${escapeHtml(s)}`).join('<br><br>') || '<em style="color:var(--text3)">None detected</em>';
 
   // Show auto-estimate note if we matched library ingredients
   const estEl = document.getElementById('rd-auto-estimate');
@@ -4275,7 +4343,7 @@ function openRecipeDetailModal(parsed) {
     estEl.style.display = 'none';
   }
 
-  document.getElementById('recipe-detail-modal').classList.add('open');
+  openModalById('recipe-detail-modal');
 }
 
 function saveRecipe() {
@@ -4318,16 +4386,16 @@ function renderRecipesList() {
     const macroStr = r.kcal
       ? `${r.kcal} cal/serving · P:${r.protein||'?'}g C:${r.carbs||'?'}g F:${r.fat||'?'}g`
       : 'Macros not set';
-    return `<div class="recipe-card" onclick="openRecipeView('${r.id}')">
+    return `<div class="recipe-card" role="button" tabindex="0" onclick="openRecipeView('${r.id}')">
       <div class="rc-header">
-        <div class="rc-name">📄 ${r.name}</div>
+        <div class="rc-name">📄 ${escapeHtml(r.name)}</div>
         ${r.kcal ? `<div class="rc-cals">${r.kcal} cal</div>` : ''}
       </div>
-      ${r.source ? `<div class="rc-source">${r.source}</div>` : ''}
+      ${r.source ? `<div class="rc-source">${escapeHtml(r.source)}</div>` : ''}
       <div class="rc-macros">${macroStr} · ${r.servings} serving${r.servings>1?'s':''}</div>
       <div class="rc-tags">
         ${r.estimated ? '<span class="rc-tag estimated">Macros estimated</span>' : ''}
-        ${(r.tags||[]).map(t=>`<span class="rc-tag">${t}</span>`).join('')}
+        ${(r.tags||[]).map(t=>`<span class="rc-tag">${escapeHtml(t)}</span>`).join('')}
       </div>
       <div class="rc-actions" onclick="event.stopPropagation()">
         <button class="rc-btn rc-btn-primary" onclick="openRecipeBuilder('${r.id}')">✎ Edit</button>
@@ -4358,14 +4426,14 @@ function openRecipeView(recipeId) {
     `<div style="font-size:12px;color:var(--text3);">Macros not set — edit recipe to add them.</div>`;
 
   document.getElementById('rv-ingredients').innerHTML =
-    (r.ingredients||[]).map(i=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">• ${i}</div>`).join('') ||
+    (r.ingredients||[]).map(i=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">• ${escapeHtml(i)}</div>`).join('') ||
     '<em style="color:var(--text3);">None recorded</em>';
 
   document.getElementById('rv-instructions').innerHTML =
-    (r.instructions||[]).map((s,i)=>`<div style="margin-bottom:10px;"><b>Step ${i+1}.</b> ${s}</div>`).join('') ||
+    (r.instructions||[]).map((s,i)=>`<div style="margin-bottom:10px;"><b>Step ${i+1}.</b> ${escapeHtml(s)}</div>`).join('') ||
     '<em style="color:var(--text3);">None recorded</em>';
 
-  document.getElementById('recipe-view-modal').classList.add('open');
+  openModalById('recipe-view-modal');
 }
 
 // ── ADD RECIPE TO MEAL ────────────────────────────────────────────────────────
@@ -4421,8 +4489,7 @@ function deleteRecipeFromView() {
   toast('Recipe deleted');
 }
 
-// ── PATCH BUILDER TO HANDLE RECIPE ITEMS ─────────────────────────────────────
-// Override calcMealMacros to include recipe items
+// ── Meal builder (foods + recipe items) ──────────────────────────────────────
 function calcMealMacros() {
   let kcal = 0, protein = 0, carbs = 0, fat = 0;
   state.currentMeal.forEach(item => {
@@ -4445,7 +4512,6 @@ function calcMealMacros() {
   return { kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat) };
 }
 
-// ── PATCH addFoodToMeal TO USE SMART PORTIONING ───────────────────────────────
 function addFoodToMeal(foodId) {
   if (foodPickerTarget === 'recipe') { recipeBuildAddFood(foodId); return; }
   const qty = 1; // always start at 1 serving; the user adjusts from there
@@ -4460,9 +4526,6 @@ function addFoodToMeal(foodId) {
   toast(`Added · ${qty} serving${qty !== 1 ? 's' : ''}`);
 }
 
-// ── PATCH renderBuilder TO SHOW RECIPE ITEMS ─────────────────────────────────
-// We need to extend the meal-items renderer to handle recipeId items too
-const _origRenderBuilder = renderBuilder;
 function renderBuilder() {
   updateTargetDisplay();
   updateMealEditUI();
@@ -4505,17 +4568,17 @@ function renderBuilder() {
       return `<div class="meal-item">
         <span class="mi-emoji">📄</span>
         <div class="mi-info">
-          <div class="mi-name">${r.name}</div>
+          <div class="mi-name">${escapeHtml(r.name)}</div>
           <div class="mi-macros">${qtyLabel} · ${itemKcal} cal · ${itemP}g P · ${itemC}g C · ${itemF}g F
             ${r.estimated ? ' <span style="font-size:9px;color:var(--fat);">est.</span>' : ''}
           </div>
         </div>
         <div class="mi-qty">
-          <div class="qty-btn" onclick="adjustQty(${i}, -1)">−</div>
+          <button type="button" class="qty-btn" onclick="adjustQty(${i}, -1)" aria-label="Less">−</button>
           <div class="qty-val">${item.qty}</div>
-          <div class="qty-btn" onclick="adjustQty(${i}, 1)">+</div>
+          <button type="button" class="qty-btn" onclick="adjustQty(${i}, 1)" aria-label="More">+</button>
         </div>
-        <div class="mi-remove" onclick="removeMealItem(${i})">✕</div>
+        <button type="button" class="mi-remove" onclick="removeMealItem(${i})" aria-label="Remove">✕</button>
       </div>`;
     } else {
       const f = getFood(item.foodId);
@@ -4523,29 +4586,26 @@ function renderBuilder() {
       return `<div class="meal-item">
         <span class="mi-emoji">${foodIcon(f, 24)}</span>
         <div class="mi-info">
-          <div class="mi-name">${f.name}</div>
+          <div class="mi-name">${escapeHtml(f.name)}</div>
           <div class="mi-macros">${Math.round(f.kcal * item.qty)} cal · ${Math.round(f.protein * item.qty)}g P · ${Math.round(f.carbs * item.qty)}g C · ${Math.round(f.fat * item.qty)}g F</div>
         </div>
         <div class="mi-qty">
-          <div class="qty-btn" onclick="adjustQty(${i}, -1)">−</div>
+          <button type="button" class="qty-btn" onclick="adjustQty(${i}, -1)" aria-label="Less">−</button>
           <div class="qty-val">${item.qty}</div>
-          <div class="qty-btn" onclick="adjustQty(${i}, 1)">+</div>
+          <button type="button" class="qty-btn" onclick="adjustQty(${i}, 1)" aria-label="More">+</button>
         </div>
-        <div class="mi-remove" onclick="removeMealItem(${i})">✕</div>
+        <button type="button" class="mi-remove" onclick="removeMealItem(${i})" aria-label="Remove">✕</button>
       </div>`;
     }
   }).join('');
 }
 
-// ── PATCH adjustQty for finer recipe steps ───────────────────────────────────
 function adjustQty(i, delta) {
-  const item = state.currentMeal[i];
-  const step = item.recipeId ? 0.5 : 0.5;
-  item.qty = Math.max(0.5, Math.round((item.qty + delta * step) * 4) / 4);
+  const item = state.currentMeal[i]; if (!item) return;
+  item.qty = Math.max(0.5, Math.round((item.qty + delta * 0.5) * 4) / 4);
   renderBuilder();
 }
 
-// ── PATCH saveMeal to capture recipe items in macro snapshot ─────────────────
 function saveMeal() {
   if (state.currentMeal.length === 0) { toast('Add some foods first'); return; }
   const name = document.getElementById('meal-name-input').value.trim() || 'Meal ' + (state.savedMeals.length + 1);
@@ -4619,8 +4679,8 @@ function syncSlotMeal(key, slot) {
   saveState();
 }
 
-// ── PATCH openMealAssign to show recipes in planner picker ───────────────────
-// (recipes usable as meals directly in planner)
+// ── Planner: assign a saved meal or recipe to a slot ─────────────────────────
+let assignTarget = null;
 function openMealAssign(dk, slotName) {
   assignTarget = { dateKey: dk, slotName };
   document.getElementById('meal-assign-title').textContent = `Assign to ${slotName}`;
@@ -4632,33 +4692,33 @@ function openMealAssign(dk, slotName) {
     list.innerHTML = `<div style="text-align:center;padding:20px;font-size:13px;color:var(--text3);">No saved meals or recipes yet.</div>`;
   } else {
     const mealHTML = meals.map(meal => `
-      <div class="food-pick-item" onclick="assignMeal('${meal.id}', 'meal')">
+      <button type="button" class="food-pick-item" onclick="assignMeal('${meal.id}', 'meal')">
         <span class="fpi-emoji">🍽️</span>
         <div class="fpi-info">
-          <div class="fpi-name">${meal.name}</div>
+          <div class="fpi-name">${escapeHtml(meal.name)}</div>
           <div class="fpi-macros">${meal.kcal} cal · P:${meal.protein}g C:${meal.carbs}g F:${meal.fat}g</div>
         </div>
         <span class="fpi-add">+</span>
-      </div>`).join('');
+      </button>`).join('');
 
     const recipeHTML = recipes.map(r => `
-      <div class="food-pick-item" onclick="assignMeal('${r.id}', 'recipe')" style="border-left:3px solid var(--fat);">
+      <button type="button" class="food-pick-item" onclick="assignMeal('${r.id}', 'recipe')" style="border-left:3px solid var(--fat);">
         <span class="fpi-emoji">📄</span>
         <div class="fpi-info">
-          <div class="fpi-name">${r.name}</div>
+          <div class="fpi-name">${escapeHtml(r.name)}</div>
           <div class="fpi-macros">${r.kcal ? r.kcal + ' cal/serving' : 'Macros not set'}${r.estimated ? ' · est.' : ''}</div>
         </div>
         <span class="fpi-add">+</span>
-      </div>`).join('');
+      </button>`).join('');
 
     list.innerHTML = (meals.length ? `<div class="section-head" style="padding:0 2px 6px;">Saved meals</div>${mealHTML}` : '') +
       (recipes.length ? `<div class="section-head" style="padding:8px 2px 6px;">Recipes</div>${recipeHTML}` : '') +
-      `<div class="food-pick-item" style="border-color:var(--warn);opacity:0.7;margin-top:8px;" onclick="assignMeal(null,'meal')">
+      `<button type="button" class="food-pick-item" style="border-color:var(--warn);opacity:0.7;margin-top:8px;" onclick="assignMeal(null,'meal')">
         <span class="fpi-emoji">✕</span>
         <div class="fpi-info"><div class="fpi-name">Clear this slot</div></div>
-      </div>`;
+      </button>`;
   }
-  document.getElementById('meal-assign-modal').classList.add('open');
+  openModalById('meal-assign-modal');
 }
 
 function assignMeal(id, type) {
@@ -4672,7 +4732,6 @@ function assignMeal(id, type) {
   renderPlanner();
 }
 
-// Patch getMealMacrosById to also handle recipe-type slots
 function getMealMacrosById(mealId, mealType) {
   if (mealType === 'recipe') {
     const r = state.recipes.find(r => r.id === mealId);
@@ -4683,15 +4742,6 @@ function getMealMacrosById(mealId, mealType) {
   if (!meal) return { kcal: 0, protein: 0, carbs: 0, fat: 0 };
   return { kcal: meal.kcal, protein: meal.protein, carbs: meal.carbs, fat: meal.fat };
 }
-
-// ════════════════════════════════════════ INIT ════════════════════════════════
-loadState();
-loadMFPData();
-loadSettingsUI();
-buildQueue();
-renderSwipeCard();
-updateTargetDisplay();
-renderMFPSummary();
 
 // ════════════════════════════════════════════════════════════════════════════
 //  DIARY / TRACKER · BARCODE SCAN · FITBIT · RECOMMENDATIONS · PWA
@@ -4712,6 +4762,7 @@ function ensureDataModel() {
   if (!state.inventory) state.inventory = []; // [ { id, name, qty, unit, bestBy, low } ]  pantry / best-by tracking
   if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
+  if (state.settings && !state.settings.theme) state.settings.theme = 'auto';
   if (!state.sync) state.sync = { url: '', anonKey: '', email: '', access: null, refresh: null, expiresAt: 0, userId: null, userEmail: null, ingestToken: null };
   if (!state.usda) state.usda = { apiKey: '' }; // USDA FoodData Central key (optional)
   if (!state.nutritionix) state.nutritionix = { appId: '', appKey: '' }; // restaurant / branded menus (optional)
@@ -4741,7 +4792,35 @@ function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function fmtQty(q) { return Number.isInteger(q) ? String(q) : String(Math.round(q * 100) / 100); }
-function openModalById(id) { document.getElementById(id).classList.add('open'); }
+// ── Modals / sheets ──────────────────────────────────────────────────────────
+// Every overlay opens and closes through these helpers: the page behind stops
+// scrolling, Escape closes the top-most sheet, and the camera is released when
+// the scanner closes.
+function openModalById(id) {
+  const el = document.getElementById(id); if (!el) return;
+  el.classList.add('open');
+  document.body.classList.add('modal-open');
+}
+function closeModal(id) {
+  const el = document.getElementById(id); if (!el) return;
+  if (id === 'scanner-modal') stopScan();
+  el.classList.remove('open');
+  if (!document.querySelector('.modal-overlay.open, .overlay.open')) document.body.classList.remove('modal-open');
+  // Settings can change the budget; refresh Today however the drawer was dismissed.
+  if (id === 'settings-overlay' && document.getElementById('screen-today').classList.contains('active')) renderDiary();
+}
+function closeTopModal() {
+  const open = [...document.querySelectorAll('.modal-overlay.open, .overlay.open')];
+  if (!open.length) return false;
+  open.sort((a, b) => (parseInt(getComputedStyle(b).zIndex, 10) || 0) - (parseInt(getComputedStyle(a).zIndex, 10) || 0));
+  closeModal(open[0].id);
+  return true;
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && closeTopModal()) e.preventDefault(); });
+// Keyboard activation for generated list rows that act as buttons.
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.matches('[role="button"]:not(button):not(a)')) { e.preventDefault(); e.target.click(); }
+});
 function defaultSlot() { const h = new Date().getHours(); if (h < 11) return 'Breakfast'; if (h < 16) return 'Lunch'; if (h < 21) return 'Dinner'; return 'Snacks'; }
 
 // ── Diary rendering ──────────────────────────────────────────────────────────
@@ -4766,9 +4845,15 @@ function addWater(oz) {
   renderHydration();
 }
 function setWaterGoal() {
-  const cur = waterGoal();
-  const v = parseInt(prompt('Daily water goal (oz):', cur), 10);
-  if (v && v > 0) { ensureDataModel(); state.settings.waterGoal = v; saveState(); renderHydration(); }
+  openSettings();
+  setTimeout(() => { const el = document.getElementById('s-water'); if (el) { el.scrollIntoView({ block: 'center' }); el.focus(); el.select(); } }, 60);
+}
+function saveWaterGoal() {
+  ensureDataModel();
+  const el = document.getElementById('s-water');
+  state.settings.waterGoal = clampNum(el.value, 16, 300, waterGoal());
+  el.value = state.settings.waterGoal;
+  saveState(); renderHydration();
 }
 function renderHydration() {
   const key = dkey(diaryDate);
@@ -4790,6 +4875,7 @@ function renderDiary() {
   else if (key === yest) lbl.textContent = 'Yesterday';
   else lbl.textContent = diaryDate.toLocaleDateString(undefined, { weekday: 'long' });
   sub.textContent = diaryDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const pill = document.getElementById('today-pill'); if (pill) pill.hidden = key === today;
 
   const t = calcTDEE();
   const tot = diaryTotals(key);
@@ -4838,10 +4924,10 @@ function renderDiaryMeals(key) {
       const qtyLabel = e.qty !== 1 ? (fmtQty(e.qty) + '× ') : '';
       return `<div class="diary-entry">
         <span class="de-emoji">${foodIcon(e, 18)}</span>
-        <div class="de-main" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;"><div class="de-name">${escapeHtml(e.name)}</div>
+        <div class="de-main" role="button" tabindex="0" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;"><div class="de-name">${escapeHtml(e.name)}</div>
           <div class="de-sub">${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)} · tap to edit</div></div>
         <span class="de-kcal" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;">${ek}</span>
-        <span class="de-del" onclick="removeDiaryEntry('${key}','${e.id}')">✕</span>
+        <button type="button" class="de-del" onclick="removeDiaryEntry('${key}','${e.id}')" aria-label="Remove ${escapeHtml(e.name)}">✕</button>
       </div>`;
     }).join('');
     return `<div class="diary-meal">
@@ -4916,10 +5002,10 @@ function renderRecentSlotMeals(slot) {
   if (!_recentSlotMeals.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'block';
   el.innerHTML = `<div class="log-recent-head">Recent ${escapeHtml(slot.toLowerCase())} — tap to log again</div>` +
-    _recentSlotMeals.map((m, i) => `<div class="log-recent-item" onclick="relogSlotMeal(${i})">
+    _recentSlotMeals.map((m, i) => `<button type="button" class="log-recent-item" onclick="relogSlotMeal(${i})">
       <div class="lri-main"><div class="lri-names">${escapeHtml(m.label)}</div>
         <div class="lri-macros">${m.kcal} cal · ${relDay(m.dateKey)}</div></div>
-      <span class="lri-add">↻</span></div>`).join('');
+      <span class="lri-add">↻</span></button>`).join('');
 }
 function relogSlotMeal(i) {
   const m = _recentSlotMeals[i]; if (!m) return;
@@ -4954,10 +5040,10 @@ function logSourceTab(which, el) {
   else if (which === 'recipes') renderLogRecipes();
 }
 function pickRow(onclick, emoji, name, macros) {
-  return `<div class="food-pick-item" onclick="${onclick}">
+  return `<button type="button" class="food-pick-item" onclick="${onclick}">
     <span class="fpi-emoji">${emoji}</span>
-    <div class="fpi-info"><div class="fpi-name">${escapeHtml(name)}</div><div class="fpi-macros">${macros}</div></div>
-    <span class="fpi-add">+</span></div>`;
+    <div class="fpi-info"><div class="fpi-name">${escapeHtml(name)}</div><div class="fpi-macros">${escapeHtml(macros)}</div></div>
+    <span class="fpi-add">+</span></button>`;
 }
 let offSearchTimer = null, offSearchSeq = 0;
 const offCache = {};
@@ -5511,15 +5597,15 @@ function renderClaudeItems() {
       : `<span class="cl-badge${it.confidence === 'low' ? ' low' : ''}">Estimate · ${escapeHtml(it.confidence || 'medium')}</span>`;
     const sub = [it.serving ? 'per ' + escapeHtml(it.serving) : '', escapeHtml(it.assumption)].filter(Boolean).join(' · ');
     return `<div class="cl-item${it.on ? '' : ' off'}" id="cl-row-${i}">
-      <input type="checkbox" ${it.on ? 'checked' : ''} onchange="claudeItems[${i}].on=this.checked;renderClaudeItems()">
+      <input type="checkbox" ${it.on ? 'checked' : ''} aria-label="Include ${escapeHtml(it.name)}" onchange="claudeItems[${i}].on=this.checked;renderClaudeItems()">
       <span class="de-emoji">${foodIcon(it, 20)}</span>
       <div class="cl-main">
         <div class="cl-name">${escapeHtml(it.name)}${badge}</div>
         <div class="cl-sub">${sub}</div>
         <div class="cl-controls">
-          <input type="number" min="0.25" step="0.25" value="${it.qty}" oninput="claudeItems[${i}].qty=Math.max(0,parseFloat(this.value)||0);renderClaudeTotals()">
+          <input type="number" min="0.25" step="0.25" value="${it.qty}" aria-label="Servings of ${escapeHtml(it.name)}" oninput="claudeItems[${i}].qty=Math.max(0,parseFloat(this.value)||0);renderClaudeTotals()">
           <span>servings</span>
-          <select onchange="claudeItems[${i}].slot=this.value">${slotOpts(it.slot)}</select>
+          <select aria-label="Meal for ${escapeHtml(it.name)}" onchange="claudeItems[${i}].slot=this.value">${slotOpts(it.slot)}</select>
         </div>
       </div>
       <span class="cl-kcal" id="cl-kcal-${i}"></span>
@@ -5684,7 +5770,7 @@ async function lookupBarcode(code) {
     const p = j.product, n = p.nutriments || {};
     const perServing = n['energy-kcal_serving'] != null || n['proteins_serving'] != null;
     const basis = perServing ? '_serving' : '_100g';
-    const kcal = Math.round(num(n['energy-kcal' + basis]) || num(n['energy-kcal_100g']));
+    const kcal = Math.round(offKcalFrom(n, basis)); // kcal, or kJ ÷ 4.184 when that's all the label has
     const protein = Math.round(num(n['proteins' + basis]));
     const carbs = Math.round(num(n['carbohydrates' + basis]));
     const fat = Math.round(num(n['fat' + basis]));
@@ -5729,7 +5815,7 @@ function showScanResult(p) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="scan-product">
-      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
@@ -5741,7 +5827,7 @@ function showScanWillEat(p) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="scan-product">
-      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
@@ -5758,7 +5844,7 @@ function showScanRecipe(p) {
   document.getElementById('scanner-stage').style.display = 'none';
   const el = document.getElementById('scanner-result'); el.style.display = 'block';
   el.innerHTML = `<div class="scan-product">
-      ${p.img ? `<img src="${p.img}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
       <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
       <div class="pick-macros" style="margin-top:3px;">${escapeHtml(p.serving)} · ${p.kcal} cal · P${p.protein} C${p.carbs} F${p.fat}</div></div>
     </div>
@@ -6257,7 +6343,7 @@ function mergeCloudInto(cloud) {
   state.hydration = mergeDaily(state.hydration, cloud.hydration);
   state.inventory = unionById(state.inventory, cloud.inventory).filter(x => !tombed('inv:' + x.id));
   state.foodOverrides = { ...(cloud.foodOverrides || {}), ...(state.foodOverrides || {}) };
-  _origSaveState();
+  persistLocal();
 }
 async function pushCloud() {
   if (!sbAuthed()) return;
@@ -6290,7 +6376,7 @@ async function pullSteps() {
     const rows = await r.json();
     ensureDataModel();
     rows.forEach(row => { state.healthDaily[row.day] = { steps: row.steps, source: row.source, syncedAt: Date.now() }; });
-    _origSaveState();
+    persistLocal();
   } catch (e) {}
 }
 async function ensureIngestToken() {
@@ -6301,7 +6387,7 @@ async function ensureIngestToken() {
       method: 'POST', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ token, user_id: state.sync.userId })
     });
-    if (r.ok || r.status === 201) { state.sync.ingestToken = token; _origSaveState(); }
+    if (r.ok || r.status === 201) { state.sync.ingestToken = token; persistLocal(); }
   } catch (e) {}
 }
 let _syncing = false;
@@ -6795,7 +6881,7 @@ function habitualGapsHtml() {
   if (!gaps.length) return '';
   return '<div class="rec-nutri-head">You often run low on <span>· recent weeks</span></div>' + gaps.map(g => {
     const src = (NUTRIENT_SOURCES[g.nt.key] || []).slice(0, 4);
-    const chips = src.map(name => `<span class="nutri-chip" onclick="suggestSearch('${name.replace(/'/g, "\\'")}')">${escapeHtml(name)}</span>`).join('');
+    const chips = src.map(name => `<button type="button" class="nutri-chip" onclick="suggestSearch('${name.replace(/'/g, "\\'")}')">${escapeHtml(name)}</button>`).join('');
     return `<div class="rec-nutri">
       <div class="rn-top"><span class="rn-name">${g.nt.label}</span><span class="rn-pct" style="color:${nutrientColor(g.avg)};">averaging ${Math.round(g.avg * 100)}% of daily target</span></div>
       <div class="nutri-chips">${chips}</div>
@@ -6892,12 +6978,12 @@ function openRecommend() {
     html += `<div class="rec-nutri-head">${sec.label}</div>` + picks.map(({ f, kind }) => {
       const logCall = kind === 'meal' ? `logMealTo('${f.id}','${sec.slot}')` : kind === 'recipe' ? `logRecipeTo('${f.id}','${sec.slot}')` : `logFoodTo('${f.id}','${sec.slot}')`;
       const icon = kind === 'food' ? foodIcon(f, 28) : f.emoji;
-      return `<div class="rec-item" onclick="${logCall}">
+      return `<button type="button" class="rec-item" onclick="${logCall}">
         <span class="ri-emoji">${icon}</span>
         <div class="ri-main"><div class="ri-name">${escapeHtml(f.name)}</div>
           <div class="ri-why">${recWhy(f, sec.ctx)}</div>
-          <div class="ri-macros">${f.serving} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
-        <span class="ri-add">＋</span></div>`;
+          <div class="ri-macros">${escapeHtml(f.serving)} · ${f.kcal} cal · P${f.protein} C${f.carbs} F${f.fat}</div></div>
+        <span class="ri-add">＋</span></button>`;
     }).join('');
   });
   list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml() + habitualGapsHtml();
@@ -6991,7 +7077,7 @@ function micronutrientRecsHtml() {
   if (!gaps.length) return '<div class="rec-nutri-head">Vitamins & minerals</div><div class="rec-empty" style="padding:10px;">You’re on track with your tracked nutrients too. 💪</div>';
   return '<div class="rec-nutri-head">You’re running low on</div>' + gaps.map(s => {
     const src = (NUTRIENT_SOURCES[s.nt.key] || []).slice(0, 4);
-    const chips = src.map(name => `<span class="nutri-chip" onclick="suggestSearch('${name.replace(/'/g, "\\'")}')">${escapeHtml(name)}</span>`).join('');
+    const chips = src.map(name => `<button type="button" class="nutri-chip" onclick="suggestSearch('${name.replace(/'/g, "\\'")}')">${escapeHtml(name)}</button>`).join('');
     return `<div class="rec-nutri">
       <div class="rn-top"><span class="rn-name">${s.nt.label}</span><span class="rn-pct" style="color:${nutrientColor(s.pct)};">${Math.round(s.pct * 100)}% of ${TIER_LABEL[s.nt.tier].toLowerCase()} target</span></div>
       <div class="nutri-chips">${chips}</div>
@@ -7034,49 +7120,10 @@ function recWhy(f, ctx) {
   return parts.length ? parts.join(' · ') : 'Helps round out your nutrients';
 }
 
-// ── Override navigation / overlays to wire in the new screens ────────────────
-switchTab = function (id, el) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-  const scr = document.getElementById('screen-' + id); if (scr) scr.classList.add('active');
-  if (el) el.classList.add('active');
-  if (id === 'today') renderDiary();
-  else if (id === 'foods') foodsEntry();
-  else if (id === 'builder') renderBuilder();
-  else if (id === 'planner') renderPlanner();
-  else if (id === 'history') renderHistory();
-  window.scrollTo(0, 0);
-};
-const _origOverlayClick = overlayClick;
-overlayClick = function (e, id) {
-  if (e.target === document.getElementById(id)) {
-    if (id === 'scanner-modal') stopScan();
-    document.getElementById(id).classList.remove('open');
-  }
-};
-const _origOpenSettings = openSettings;
-openSettings = function () { _origOpenSettings(); renderSyncSettings(); renderEnergySettings(); renderGoogleHealthSettings(); renderNutritionixSettings(); };
-const _origRenderHistory = renderHistory;
-renderHistory = function () { _origRenderHistory(); renderStepsChart(); renderNutrients(); renderEnergyHistory(); renderEnergyByTime(); renderEnergyInsights(); };
 
-// Every local save also schedules a debounced push to the cloud (when signed in).
-const _origSaveState = saveState;
-let _cloudPushTimer = null;
-saveState = function () {
-  _origSaveState();
-  if (sbAuthed()) {
-    if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
-    _cloudPushTimer = setTimeout(() => { _cloudPushTimer = null; pushCloud(); }, 2500);
-  }
-};
-const _origCloseSettings = closeSettings;
-closeSettings = function () {
-  _origCloseSettings();
-  if (document.getElementById('screen-today').classList.contains('active')) renderDiary();
-};
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v88 · 2026-10-26';
+const APP_VERSION = 'v89 · 2026-10-26';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');
@@ -7114,8 +7161,15 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ── Boot the tracker layer ───────────────────────────────────────────────────
+// ── Boot ─────────────────────────────────────────────────────────────────────
+loadState();
+loadMFPData();
 ensureDataModel();
+applyTheme();
+loadSettingsUI();
+buildQueue();
+renderSwipeCard();
+renderMFPSummary();
 renderSyncSettings();
 renderGoogleHealthSettings();
 renderDiary();

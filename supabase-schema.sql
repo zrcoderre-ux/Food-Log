@@ -10,6 +10,7 @@
 --    • ingest_steps() — an RPC the Shortcut calls with only the public anon key
 --    • plateiq_push   — Web Push subscriptions for closed-app reminders
 --    • plateiq_inbox  — food logged by voice (Siri), waiting for the app
+--    • Data API grants for each table (needed for tables created after 2026-10-30)
 --  Row-Level Security ensures every user can only ever read/write their own rows.
 -- ============================================================================
 
@@ -140,3 +141,18 @@ create policy "own inbox select" on public.plateiq_inbox
 drop policy if exists "own inbox delete" on public.plateiq_inbox;
 create policy "own inbox delete" on public.plateiq_inbox
   for delete using (auth.uid() = user_id);
+
+-- ── Data API grants ─────────────────────────────────────────────────────────
+-- Supabase stopped auto-granting API access to new tables in "public" on
+-- 2026-10-30, so each table's access is granted here explicitly (only what the
+-- app and edge functions use). Row-Level Security above still limits every
+-- signed-in user to their own rows; the public anon key gets no table access
+-- (the Shortcut's step import goes through ingest_steps()). Safe to re-run.
+grant select, insert, update         on public.plateiq_state  to authenticated;
+grant select                         on public.plateiq_steps  to authenticated;
+grant select, insert                 on public.plateiq_tokens to authenticated;
+grant select, insert, update, delete on public.plateiq_push   to authenticated;
+grant select, delete                 on public.plateiq_inbox  to authenticated;
+grant select, insert, update, delete
+  on public.plateiq_state, public.plateiq_steps, public.plateiq_tokens, public.plateiq_push, public.plateiq_inbox
+  to service_role;

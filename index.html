@@ -860,7 +860,10 @@ body {
 .claude-status.busy::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: claude-spin 0.8s linear infinite; vertical-align: -1px; }
 @keyframes claude-spin { to { transform: rotate(360deg); } }
 .cl-text { width: 100%; min-height: 84px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 14px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); resize: vertical; }
-.cl-photo-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 12px; }
+.cl-photo-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin: 10px 0 12px; }
+.cl-label-head { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.cl-photo-btns { display: flex; gap: 8px; margin-bottom: 4px; }
+.cl-photo-btns .btn-secondary { flex: 1; margin: 0; padding: 9px; font-size: 13px; }
 .cl-photo-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
 .cl-summary { font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 10px; }
 .cl-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -1610,7 +1613,12 @@ body {
 <div class="modal-overlay" id="add-food-modal" onclick="overlayClick(event,'add-food-modal')">
   <div class="modal">
     <div class="modal-title">Add custom food</div>
-    <button type="button" class="btn-secondary" style="margin-bottom:4px;" onclick="document.getElementById('cf-label-input').click()">🏷️ Read a nutrition label with Claude</button>
+    <div class="cl-label-head">🏷️ Read a nutrition label with Claude</div>
+    <div class="cl-photo-btns">
+      <button type="button" class="btn-secondary" onclick="document.getElementById('cf-label-camera').click()">📷 Take photo</button>
+      <button type="button" class="btn-secondary" onclick="document.getElementById('cf-label-input').click()">🖼️ Choose photo</button>
+    </div>
+    <input type="file" id="cf-label-camera" accept="image/*" capture="environment" style="display:none;" onchange="onLabelPhoto(event)">
     <input type="file" id="cf-label-input" accept="image/*" style="display:none;" onchange="onLabelPhoto(event)">
     <div id="cf-label-status" class="claude-status" style="display:none;"></div>
     <div class="form-group">
@@ -1905,9 +1913,11 @@ body {
       <p class="cl-summary">Describe what you ate, add a photo of the food, or both. You'll review every item before anything is added.</p>
       <textarea id="cl-text" class="cl-text" placeholder="e.g. 2 scrambled eggs, a slice of sourdough with butter, and a medium oat latte"></textarea>
       <div class="cl-photo-row">
-        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cl-photo-input').click()">📷 Add a photo</button>
+        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cl-photo-camera').click()">📷 Take photo</button>
+        <button type="button" class="btn-ghost" style="padding:6px 10px;" onclick="document.getElementById('cl-photo-input').click()">🖼️ Choose photo</button>
         <img id="cl-photo-preview" alt="" style="display:none;">
         <a id="cl-photo-clear" href="javascript:void(0)" onclick="clearClaudeMealPhoto()" style="color:var(--text3);font-size:12px;display:none;">remove</a>
+        <input type="file" id="cl-photo-camera" accept="image/*" capture="environment" style="display:none;" onchange="onClaudeMealPhoto(event)">
         <input type="file" id="cl-photo-input" accept="image/*" style="display:none;" onchange="onClaudeMealPhoto(event)">
       </div>
       <div class="form-group">
@@ -7066,7 +7076,7 @@ closeSettings = function () {
 };
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v87 · 2026-10-26';
+const APP_VERSION = 'v88 · 2026-10-26';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

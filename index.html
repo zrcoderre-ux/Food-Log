@@ -923,6 +923,33 @@ textarea.field { resize: none; line-height: 1.45; }
 }
 .diary-action:active { background: var(--surface2); }
 .diary-action .da-ic { font-size: 15px; }
+.diary-action.claude-action { flex: none; width: 100%; color: var(--accent-text); background: var(--accent-light); border-color: transparent; }
+
+/* Claude assistant (label reading + describe/photo logging) */
+.claude-status { font-size: 12px; line-height: 1.5; border-radius: var(--radius-sm); padding: 9px 12px; margin: 8px 0; background: var(--surface2); color: var(--text2); }
+.claude-status.ok { background: var(--accent-light); color: var(--accent-text); }
+.claude-status.warn { background: var(--alert-bg); color: var(--alert-text); }
+.claude-status.busy::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: claude-spin 0.8s linear infinite; vertical-align: -1px; }
+@keyframes claude-spin { to { transform: rotate(360deg); } }
+.cl-text { width: 100%; min-height: 84px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; font-size: 16px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); resize: vertical; }
+.cl-photo-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 12px; }
+.cl-photo-row img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
+.cl-summary { font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 10px; }
+.cl-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.cl-item.off { opacity: 0.45; }
+.cl-item input[type=checkbox] { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+.cl-main { flex: 1; min-width: 0; }
+.cl-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.cl-sub { font-size: 11px; color: var(--text3); line-height: 1.45; margin-top: 2px; }
+.cl-badge { display: inline-block; font-size: 10px; font-weight: 600; border-radius: 6px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px; background: var(--surface2); color: var(--text2); }
+.cl-badge.mine { background: var(--accent-light); color: var(--accent-text); }
+.cl-badge.low { background: var(--alert-bg); color: var(--alert-text); }
+.cl-controls { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text2); }
+.cl-controls input, .cl-controls select { border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; font-size: 16px; font-family: 'DM Sans', sans-serif; background: var(--surface2); color: var(--text); }
+.cl-controls input { width: 64px; }
+.cl-kcal { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.cl-total { font-size: 13px; color: var(--text2); margin: 10px 0; }
+.cl-save-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); margin: 4px 0 10px; }
 
 .diary-meal {
   margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border);
@@ -1205,6 +1232,9 @@ textarea.field { resize: none; line-height: 1.45; }
     <button id="inv-today-alert" class="inv-alert" onclick="switchTab('foods');showView('inventory');" hidden></button>
 
     <!-- Quick actions -->
+    <div class="diary-actions" style="padding-bottom:10px;">
+      <button class="diary-action claude-action" onclick="openClaudeLog()"><span class="da-ic">💬</span>Describe or snap a meal (Claude)</button>
+    </div>
     <div class="diary-actions">
       <button class="diary-action" onclick="openScanner()"><span class="da-ic">📷</span>Scan barcode</button>
       <button class="diary-action" onclick="openRecommend()"><span class="da-ic">✨</span>Recommend foods</button>
@@ -1602,6 +1632,13 @@ textarea.field { resize: none; line-height: 1.45; }
     </div>
 
     <div class="settings-section">
+      <div class="settings-label">Claude food assistant</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Reads nutrition labels into custom foods, and logs meals from a description or a photo. Runs through the <code>claude-food</code> function in your Supabase project with your own Anthropic API key (setup steps in the README). Needs the Cloud sync sign-in above.</p>
+      <div id="claude-settings-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
+      <button class="btn-secondary" onclick="testClaude()">Test connection</button>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-label">Google Health (steps &amp; Fitbit)</div>
       <div id="gh-connected" style="display:none;">
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent-text);background:var(--accent-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:10px;">
@@ -1659,6 +1696,9 @@ textarea.field { resize: none; line-height: 1.45; }
 <div class="modal-overlay" id="add-food-modal" onclick="overlayClick(event,'add-food-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-title">
     <div class="modal-title" id="cf-title">Add custom food</div>
+    <button type="button" class="btn-secondary" style="margin-bottom:4px;" onclick="document.getElementById('cf-label-input').click()">🏷️ Read a nutrition label with Claude</button>
+    <input type="file" id="cf-label-input" accept="image/*" style="display:none;" onchange="onLabelPhoto(event)">
+    <div id="cf-label-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
     <div class="form-group">
       <label for="cf-name">Food name</label>
       <input type="text" id="cf-name" placeholder="e.g. Greek yogurt" autocomplete="off">
@@ -1929,6 +1969,7 @@ textarea.field { resize: none; line-height: 1.45; }
     <div id="log-search-pane">
       <input type="search" class="food-search" id="log-search-input" placeholder="Search foods, or scan a barcode…" aria-label="Search foods" autocomplete="off" oninput="renderLogSearch()">
       <button class="btn-secondary" style="margin:8px 0 4px;" onclick="openScanner()">📷 Scan a barcode</button>
+      <button class="btn-secondary" style="margin:4px 0;" onclick="closeModal('log-food-modal');openClaudeLog(logTargetSlot)">💬 Describe or snap a meal (Claude)</button>
       <div id="log-recent" style="flex-shrink:0;"></div>
       <div class="food-pick-list" id="log-search-list"></div>
     </div>
@@ -1939,6 +1980,40 @@ textarea.field { resize: none; line-height: 1.45; }
       <div class="food-pick-list" id="log-recipes-list"></div>
     </div>
     <button class="btn-secondary" onclick="closeModal('log-food-modal')" style="margin-top:12px;">Cancel</button>
+  </div>
+</div>
+
+<!-- CLAUDE: DESCRIBE OR PHOTOGRAPH A MEAL -->
+<div class="modal-overlay" id="claude-log-modal" onclick="overlayClick(event,'claude-log-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cl-title" style="max-height:88dvh;overflow-y:auto;">
+    <div class="modal-title" id="cl-title">Log with Claude</div>
+    <div id="cl-input">
+      <p class="cl-summary">Describe what you ate, add a photo of the food, or both. You'll review every item before anything is added.</p>
+      <textarea id="cl-text" class="cl-text" aria-label="What did you eat?" placeholder="e.g. 2 scrambled eggs, a slice of sourdough with butter, and a medium oat latte"></textarea>
+      <div class="cl-photo-row">
+        <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('cl-photo-input').click()">📷 Add a photo</button>
+        <img id="cl-photo-preview" alt="" style="display:none;">
+        <button type="button" class="link-btn" id="cl-photo-clear" onclick="clearClaudeMealPhoto()" style="color:var(--text3);font-size:12px;display:none;">Remove photo</button>
+        <input type="file" id="cl-photo-input" accept="image/*" style="display:none;" onchange="onClaudeMealPhoto(event)">
+      </div>
+      <div class="form-group">
+        <label for="cl-slot">Meal, if you don't say</label>
+        <select id="cl-slot">
+          <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="cl-go" onclick="runClaudeMeal()">Analyze</button>
+    </div>
+    <div id="cl-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
+    <div id="cl-review" style="display:none;">
+      <div id="cl-summary" class="cl-summary"></div>
+      <div id="cl-items"></div>
+      <div id="cl-total" class="cl-total"></div>
+      <label class="cl-save-row"><input type="checkbox" id="cl-save-foods"> Also save Claude's estimates to my foods</label>
+      <button class="btn-primary" id="cl-add-btn" onclick="addClaudeItems()">Add to diary</button>
+      <button class="btn-secondary" onclick="claudeLogShowInput()">Change description or photo</button>
+    </div>
+    <button class="btn-secondary" onclick="closeModal('claude-log-modal')">Cancel</button>
   </div>
 </div>
 
@@ -3163,6 +3238,7 @@ function saveMicros() {
 
 // ════════════════════════════════════════ ADD CUSTOM FOOD ═════════════════════
 let addFoodImage = '';
+let addFoodMicros = null; // vitamins/minerals Claude read off a label, saved with the food
 function updateAddFoodIcon() {
   const el = document.getElementById('cf-icon-preview'); if (!el) return;
   const emoji = (document.getElementById('cf-emoji').value || '').trim();
@@ -3182,6 +3258,8 @@ function openAddFood() {
   ['cf-name','cf-emoji','cf-serving','cf-kcal','cf-protein','cf-carbs','cf-fat','cf-bestby'].forEach(id => document.getElementById(id).value = '');
   const sp = document.getElementById('cf-snack'); if (sp) sp.checked = false; // default: not a snack
   addFoodImage = '';
+  addFoodMicros = null;
+  document.getElementById('cf-label-status').style.display = 'none';
   updateAddFoodIcon();
   openModalById('add-food-modal');
 }
@@ -3203,6 +3281,8 @@ function saveCustomFood() {
     tags: [document.getElementById('cf-category').value],
     custom: true,
   };
+  if (addFoodMicros) food.micros = addFoodMicros; // read off a label by Claude
+  addFoodMicros = null;
   state.customFoods.push(food);
   // Deliberately added → Will-Eat, and marked used so it sorts to the top.
   state.ratings[food.id] = 'yes';
@@ -5330,6 +5410,253 @@ function confirmLog() {
   renderDiary();
 }
 
+// ── Claude food assistant ────────────────────────────────────────────────────
+// Reads nutrition labels into custom foods, and turns a typed description and/or
+// a meal photo into diary items. Calls the claude-food Supabase edge function
+// (which holds the Anthropic API key), authenticated with the Cloud sync session.
+async function claudeCall(payload) {
+  if (!sbAuthed()) throw new Error('Sign in to Cloud sync in Settings to use Claude.');
+  let r;
+  try {
+    r = await sbAuthedFetch('/functions/v1/claude-food', { method: 'POST', body: JSON.stringify(payload) });
+  } catch (e) {
+    throw new Error(e.message === 'not signed in' ? 'Your Cloud sync session expired. Sign in again in Settings.' : 'Could not reach Claude. Check your connection.');
+  }
+  if (r.status === 404) throw new Error('The claude-food function is not deployed yet (see the README).');
+  let j = null; try { j = await r.json(); } catch (e) {}
+  if (!r.ok || !j || j.error) throw new Error((j && j.error) || ('Claude request failed (' + r.status + ')'));
+  return j;
+}
+// Downscale a photo for Claude: long edge ≤ 1568px (larger adds cost, not
+// detail) as JPEG. Returns the base64 payload plus a data URL for previews.
+function prepClaudeImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that image'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const s = Math.min(1, 1568 / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        const url = cv.toDataURL('image/jpeg', 0.85);
+        resolve({ media_type: 'image/jpeg', data: url.split(',')[1], preview: url });
+      };
+      img.onerror = () => reject(new Error('Could not read that image'));
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+// Claude returns micros as [{key, amount}] in our units; store as {key: amount}.
+function microsFromClaude(list) {
+  const out = {};
+  (list || []).forEach(m => {
+    if (m && NUTRIENTS.some(nt => nt.key === m.key) && m.amount > 0) out[m.key] = Math.round(m.amount * 100) / 100;
+  });
+  return Object.keys(out).length ? out : null;
+}
+function microsSummary(m) {
+  if (!m) return '';
+  return NUTRIENTS.filter(nt => m[nt.key] != null).map(nt => nt.label + ' ' + m[nt.key] + nt.unit).join(', ');
+}
+function setClaudeStatus(id, cls, html) {
+  const el = document.getElementById(id); if (!el) return;
+  el.className = 'claude-status' + (cls ? ' ' + cls : '');
+  el.innerHTML = html;
+  el.style.display = html ? '' : 'none';
+}
+async function testClaude() {
+  setClaudeStatus('claude-settings-status', 'busy', 'Checking…');
+  try {
+    await claudeCall({ task: 'ping' });
+    setClaudeStatus('claude-settings-status', 'ok', 'Connected. Claude is ready to use.');
+  } catch (e) { setClaudeStatus('claude-settings-status', 'warn', escapeHtml(e.message)); }
+}
+
+// Nutrition label → the Add custom food form (you check it, then Save).
+async function onLabelPhoto(event) {
+  const file = event.target && event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  setClaudeStatus('cf-label-status', 'busy', 'Claude is reading the label…');
+  try {
+    const img = await prepClaudeImage(file);
+    const r = (await claudeCall({ task: 'label', image: { media_type: img.media_type, data: img.data } })).result;
+    if (!r.readable) {
+      setClaudeStatus('cf-label-status', 'warn', escapeHtml(r.note || 'Claude couldn’t find a readable label in that photo. Try again closer and in focus.'));
+      return;
+    }
+    const set = (id, v) => { document.getElementById(id).value = v; };
+    if (!document.getElementById('cf-name').value.trim()) set('cf-name', r.name || '');
+    set('cf-serving', r.serving || '');
+    set('cf-kcal', Math.round(r.kcal || 0));
+    set('cf-protein', Math.round((r.protein || 0) * 10) / 10);
+    set('cf-carbs', Math.round((r.carbs || 0) * 10) / 10);
+    set('cf-fat', Math.round((r.fat || 0) * 10) / 10);
+    if (r.category) set('cf-category', r.category);
+    if (!document.getElementById('cf-emoji').value && r.emoji) { set('cf-emoji', Array.from(r.emoji).slice(0, 2).join('')); updateAddFoodIcon(); }
+    addFoodMicros = microsFromClaude(r.micros);
+    const ms = microsSummary(addFoodMicros);
+    setClaudeStatus('cf-label-status', 'ok',
+      'Filled in from the label. Check the numbers, then tap Save.' +
+      (ms ? `<br><b>Also saving:</b> ${escapeHtml(ms)}` : '') +
+      (r.note ? `<br><b>Note:</b> ${escapeHtml(r.note)}` : ''));
+  } catch (e) { setClaudeStatus('cf-label-status', 'warn', escapeHtml(e.message)); }
+}
+
+// Describe or photograph a meal → review list → diary.
+let claudeMealImage = null; // { media_type, data, preview }
+let claudeItems = [];
+function openClaudeLog(slot) {
+  document.getElementById('cl-slot').value = slot || defaultSlot();
+  claudeLogShowInput();
+  openModalById('claude-log-modal');
+}
+function claudeLogShowInput() {
+  document.getElementById('cl-input').style.display = '';
+  document.getElementById('cl-review').style.display = 'none';
+  setClaudeStatus('cl-status', '', '');
+}
+async function onClaudeMealPhoto(event) {
+  const file = event.target && event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  try { claudeMealImage = await prepClaudeImage(file); } catch (e) { toast(e.message); return; }
+  const pv = document.getElementById('cl-photo-preview');
+  pv.src = claudeMealImage.preview; pv.style.display = '';
+  document.getElementById('cl-photo-clear').style.display = 'inline';
+}
+function clearClaudeMealPhoto() {
+  claudeMealImage = null;
+  document.getElementById('cl-photo-preview').style.display = 'none';
+  document.getElementById('cl-photo-clear').style.display = 'none';
+}
+// The foods Claude can match against, one per line: "id | name | serving | kcal".
+// [mine] marks the user's own foods, recipes and saved meals. Kept in a stable
+// order so the server can cache it between requests.
+function claudeCatalog() {
+  const clean = s => String(s == null ? '' : s).replace(/[|\r\n]+/g, ' ').trim();
+  const own = new Set((state.customFoods || []).map(f => f.id));
+  const line = (id, name, serving, kcal, mine) => `${id} | ${clean(name)} | ${clean(serving) || '1 serving'} | ${Math.round(+kcal || 0)}${mine ? ' [mine]' : ''}`;
+  const foods = allFoods().map(f => line(f.id, f.name, f.serving, f.kcal, f.recipe || own.has(f.id)));
+  const meals = (state.savedMeals || []).filter(m => m.id).map(m => line('meal:' + m.id, m.name, '1 meal', m.kcal, true));
+  return foods.concat(meals).slice(0, 4000).join('\n');
+}
+// One Claude item → what we'd log. A catalog match uses the app's own stored
+// nutrition; otherwise Claude's per-serving estimate.
+function claudeResolve(it) {
+  let base = null;
+  const mid = it.match_id || '';
+  if (mid.startsWith('meal:')) {
+    const m = (state.savedMeals || []).find(x => x.id === mid.slice(5));
+    if (m) base = { kind: 'meal', refId: m.id, name: m.name, emoji: '🍽️', image: null, serving: '1 meal', kcal: +m.kcal || 0, protein: +m.protein || 0, carbs: +m.carbs || 0, fat: +m.fat || 0, micros: null };
+  } else if (mid) {
+    const f = getFood(mid);
+    if (f) base = { kind: f.recipe ? 'recipe' : 'food', refId: f.id, name: f.name, emoji: f.recipe ? '📖' : (f.emoji || '🍽️'), image: f.image || null, serving: f.serving, kcal: +f.kcal || 0, protein: +f.protein || 0, carbs: +f.carbs || 0, fat: +f.fat || 0, micros: foodMicros(f) };
+  }
+  if (!base) base = { kind: 'food', refId: null, name: it.name, emoji: Array.from(it.emoji || '🍽️').slice(0, 2).join(''), image: null, serving: it.serving, kcal: +it.kcal || 0, protein: +it.protein || 0, carbs: +it.carbs || 0, fat: +it.fat || 0, micros: microsFromClaude(it.micros) };
+  const slot = MEAL_SECTIONS.includes(it.slot) ? it.slot : document.getElementById('cl-slot').value;
+  return { ...base, qty: it.servings > 0 ? Math.round(it.servings * 100) / 100 : 1, slot, confidence: it.confidence, assumption: it.assumption || '', on: true };
+}
+async function runClaudeMeal() {
+  const text = document.getElementById('cl-text').value.trim();
+  if (!text && !claudeMealImage) { toast('Describe what you ate or add a photo'); return; }
+  const btn = document.getElementById('cl-go'); btn.disabled = true;
+  setClaudeStatus('cl-status', 'busy', claudeMealImage ? 'Claude is looking at your meal…' : 'Claude is working it out…');
+  try {
+    const payload = { task: 'meal', text, slot: document.getElementById('cl-slot').value, catalog: claudeCatalog() };
+    if (claudeMealImage) payload.image = { media_type: claudeMealImage.media_type, data: claudeMealImage.data };
+    const r = (await claudeCall(payload)).result;
+    claudeItems = (r.items || []).map(claudeResolve);
+    setClaudeStatus('cl-status', '', '');
+    document.getElementById('cl-summary').textContent = r.summary || '';
+    document.getElementById('cl-input').style.display = 'none';
+    document.getElementById('cl-review').style.display = '';
+    document.getElementById('cl-save-foods').checked = false;
+    renderClaudeItems();
+  } catch (e) {
+    setClaudeStatus('cl-status', 'warn', escapeHtml(e.message));
+  } finally { btn.disabled = false; }
+}
+function renderClaudeItems() {
+  const slotOpts = cur => MEAL_SECTIONS.map(s => `<option${s === cur ? ' selected' : ''}>${s}</option>`).join('');
+  document.getElementById('cl-items').innerHTML = claudeItems.map((it, i) => {
+    const badge = it.refId ? '<span class="cl-badge mine">Your food</span>'
+      : `<span class="cl-badge${it.confidence === 'low' ? ' low' : ''}">Estimate · ${escapeHtml(it.confidence || 'medium')}</span>`;
+    const sub = [it.serving ? 'per ' + escapeHtml(it.serving) : '', escapeHtml(it.assumption)].filter(Boolean).join(' · ');
+    return `<div class="cl-item${it.on ? '' : ' off'}" id="cl-row-${i}">
+      <input type="checkbox" ${it.on ? 'checked' : ''} aria-label="Include ${escapeHtml(it.name)}" onchange="claudeItems[${i}].on=this.checked;renderClaudeItems()">
+      <span class="de-emoji">${foodIcon(it, 20)}</span>
+      <div class="cl-main">
+        <div class="cl-name">${escapeHtml(it.name)}${badge}</div>
+        <div class="cl-sub">${sub}</div>
+        <div class="cl-controls">
+          <input type="number" min="0.25" step="0.25" value="${it.qty}" aria-label="Servings of ${escapeHtml(it.name)}" oninput="claudeItems[${i}].qty=Math.max(0,parseFloat(this.value)||0);renderClaudeTotals()">
+          <span>servings</span>
+          <select aria-label="Meal for ${escapeHtml(it.name)}" onchange="claudeItems[${i}].slot=this.value">${slotOpts(it.slot)}</select>
+        </div>
+      </div>
+      <span class="cl-kcal" id="cl-kcal-${i}"></span>
+    </div>`;
+  }).join('') || '<div class="rec-empty" style="padding:12px;">No foods found. Try describing it differently or retaking the photo.</div>';
+  renderClaudeTotals();
+}
+function renderClaudeTotals() {
+  const t = { kcal: 0, protein: 0, carbs: 0, fat: 0 }; let n = 0;
+  claudeItems.forEach((it, i) => {
+    const el = document.getElementById('cl-kcal-' + i);
+    if (el) el.textContent = Math.round(it.kcal * it.qty) + ' cal';
+    if (!it.on || !(it.qty > 0)) return;
+    n++; ['kcal', 'protein', 'carbs', 'fat'].forEach(k => { t[k] += it[k] * it.qty; });
+  });
+  document.getElementById('cl-total').innerHTML = n
+    ? `Total <b>${Math.round(t.kcal)} cal</b> · P ${Math.round(t.protein)}g · C ${Math.round(t.carbs)}g · F ${Math.round(t.fat)}g` : '';
+  const btn = document.getElementById('cl-add-btn');
+  btn.textContent = n ? `Add ${n} item${n === 1 ? '' : 's'} to diary` : 'Add to diary';
+  btn.disabled = !n;
+}
+function addClaudeItems() {
+  ensureDataModel();
+  const key = dkey(diaryDate);
+  if (!state.diary[key]) state.diary[key] = { entries: [] };
+  const saveFoods = document.getElementById('cl-save-foods').checked;
+  const slots = new Set(); let n = 0;
+  claudeItems.forEach(it => {
+    if (!it.on || !(it.qty > 0)) return;
+    let kind = it.kind, refId = it.refId;
+    if (!refId && saveFoods) {
+      const food = { id: 'c_' + Date.now() + '_' + n, emoji: it.emoji, image: '', name: it.name, category: 'Other', serving: it.serving || '1 serving',
+        kcal: Math.round(it.kcal), protein: Math.round(it.protein * 10) / 10, carbs: Math.round(it.carbs * 10) / 10, fat: Math.round(it.fat * 10) / 10,
+        tags: ['Other'], custom: true };
+      if (it.micros) food.micros = it.micros;
+      state.customFoods.push(food);
+      state.ratings[food.id] = 'yes';
+      kind = 'food'; refId = food.id;
+    }
+    state.diary[key].entries.push({
+      id: 'e' + Date.now() + Math.round(Math.random() * 9999) + '_' + n,
+      kind, refId, name: it.name, emoji: it.emoji || '🍽️', image: it.image || null,
+      slot: it.slot, qty: it.qty, serving: it.serving || '',
+      kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat,
+      micros: it.micros || null
+    });
+    if (kind === 'food' && refId) markFoodUsed(refId);
+    markSnackIfSnackSlot(refId, it.slot);
+    slots.add(it.slot); n++;
+  });
+  if (!n) return;
+  saveState();
+  slots.forEach(s => syncSlotMeal(key, s));
+  closeModal('claude-log-modal');
+  document.getElementById('cl-text').value = '';
+  clearClaudeMealPhoto();
+  claudeItems = [];
+  toast(`Logged ${n} item${n === 1 ? '' : 's'}`);
+  renderDiary();
+}
+
 // ── Barcode scanning + Open Food Facts ───────────────────────────────────────
 let scanStream = null, scanDetector = null, scanRAF = null, scanning = false, zxingReader = null, scanMode = 'diary';
 const SCAN_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'];
@@ -6786,7 +7113,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v87 · 2026-10-20';
+const APP_VERSION = 'v88 · 2026-10-26';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

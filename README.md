@@ -169,6 +169,42 @@ function. Requires Cloud sync (above) to be set up and signed in.
 The function only nudges you inside your waking hours and respects the same
 adaptive cadence (fewer asks as it gathers data), computed in your timezone.
 
+## Claude food assistant
+
+Optional. Uses Claude (Anthropic's AI) to:
+
+- **Read a nutrition label**: Foods → Add custom food → **🏷️ Read a nutrition
+  label with Claude**. Take or pick a photo; Claude fills in the name, serving,
+  calories, macros and any vitamins/minerals on the label. Check it, then Save.
+- **Describe or snap a meal**: Today → **💬 Describe or snap a meal (Claude)**
+  (also in each meal's ＋ Add food sheet). Type what you ate, add a photo of the
+  food, or both. Claude matches items to your own foods, recipes and saved meals
+  where it can, estimates the rest (portion sizes from the photo included), and
+  shows a review list. Nothing is added until you tap **Add to diary**.
+
+It runs through a Supabase edge function, so your API key never ships in the
+public app. It requires Cloud sync (above) to be set up and signed in.
+
+1. **Get an API key.** Sign up at <https://console.anthropic.com>, add credit
+   under **Billing** (API usage is billed separately from a Claude.ai
+   subscription), then **API keys → Create key**. Consider setting a monthly
+   spend limit under **Limits**. Each label or meal costs a few cents.
+2. **Deploy the function** (Supabase CLI):
+   ```bash
+   supabase functions deploy claude-food --no-verify-jwt
+   ```
+   (`--no-verify-jwt` lets the browser's CORS preflight through; the function
+   verifies your sign-in itself.)
+3. **Set its secrets.** `ALLOWED_EMAILS` is the Cloud sync email(s) allowed to
+   use it. The project's public key is built into the app, so anyone could
+   create an account; this keeps your API bill yours.
+   ```bash
+   supabase secrets set \
+     ANTHROPIC_API_KEY=<your key> \
+     ALLOWED_EMAILS=you@email.com
+   ```
+4. In PlateIQ → Settings → **Claude food assistant** → **Test connection**.
+
 ## Food data sources
 
 Name search queries **Open Food Facts** (millions of mostly packaged/branded
@@ -223,6 +259,7 @@ findings of the last full review and what was deferred.
 | `supabase-schema.sql` | One-time SQL for cloud sync, step ingestion + push |
 | `supabase-push-cron.sql` | Schedules the energy-reminder sender (pg_cron) |
 | `supabase/functions/push-energy/` | Edge function that sends Web Push reminders |
+| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading and meal logging |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `tools/smoke.js`, `package.json` | Headless smoke test (`npm test`) |
 | `.github/workflows/` | GitHub Pages deploy and the CI smoke test |

@@ -26,9 +26,13 @@ JSON backup. Light and dark themes.
   save meals (meals you log are saved automatically), build recipes from foods
   or import them from PDF/text, plan the week, import MyFitnessPal CSVs, export
   a CSV.
-- **Water, inventory, energy** — hydration tracker, pantry items with best-by
-  and low-stock alerts, and adaptive energy check-ins with insights that
-  correlate energy with food, macros and movement.
+- **Groceries & inventory** — add groceries from a receipt photo, a photo of
+  the haul, a typed list (all read by Claude) or barcode scans. Logging a food
+  uses it up (recipes use their ingredients), items running low go on a
+  shopping list, and you get best-by and low-stock alerts, optionally as a
+  morning notification. See [Groceries & inventory](#groceries--inventory).
+- **Water & energy** — hydration tracker, and adaptive energy check-ins with
+  insights that correlate energy with food, macros and movement.
 - **Installable & offline** — web app manifest + service worker cache the app
   shell so it launches and works without a connection. Follows your system's
   light/dark setting, or pick one in Settings → Appearance.
@@ -168,6 +172,8 @@ function. Requires Cloud sync (above) to be set up and signed in.
 
 The function only nudges you inside your waking hours and respects the same
 adaptive cadence (fewer asks as it gathers data), computed in your timezone.
+The same function sends the morning inventory reminder (see below); each kind
+of reminder is sent only if it is turned on in the app.
 
 ## Claude food assistant
 
@@ -204,6 +210,39 @@ public app. It requires Cloud sync (above) to be set up and signed in.
      ALLOWED_EMAILS=you@email.com
    ```
 4. In PlateIQ → Settings → **Claude food assistant** → **Test connection**.
+
+## Groceries & inventory
+
+Foods → **🧺 Inventory & best-by**.
+
+- **Adding groceries.** **🧾 Add groceries (Claude)** takes a receipt photo, a
+  photo of the groceries, a typed list, or a mix. Claude expands receipt
+  abbreviations, matches items to your foods (creating new foods for the rest),
+  works out servings per package and estimates each item's best-by date from
+  the purchase date. Non-food lines are listed but left unchecked. You review
+  and edit everything before it is added. **📷 Scan barcodes** adds packaged
+  items one at a time, with servings per package from Open Food Facts. Buying
+  something you already have tops up the existing item.
+- **Using it up.** An item linked to a food is used up when you log that food:
+  a recipe uses its ingredients (or itself, if you keep the cooked dish as an
+  inventory item), and a saved meal uses its foods. Under **When I log food**
+  choose **Always** (with an Undo), **Ask me each time**, or **Only when I'm
+  home**, which takes it automatically when your phone is within about 250 m
+  of the home location you set, and asks otherwise. The location is checked only
+  when you log a food that's in your inventory. Deleting or editing a diary
+  entry puts back or re-scales what it took.
+- **Shopping list.** Items that drop to their "running low" mark are added
+  automatically; add your own too. Adding groceries ticks matching items off.
+  **Share list** sends it to Messages, Notes, etc.
+- **Morning reminder.** Turn on **Morning reminder of expiring & low items** to
+  get one notification at the start of your waking hours (Settings → Energy)
+  listing what to use soon and what is running low, even when the app is
+  closed. It needs Cloud sync and the Web Push setup in
+  [Closed-app energy reminders](#closed-app-energy-reminders-web-push). If you
+  already deployed `push-energy`, redeploy it with the current code (Supabase
+  website: Edge Functions → push-energy → Code, paste
+  `supabase/functions/push-energy/index.ts`, Deploy). If you already deployed
+  `claude-food`, redeploy it the same way to get grocery reading.
 
 ## Food data sources
 
@@ -258,8 +297,8 @@ findings of the last full review and what was deferred.
 | `sw.js` | Service worker (offline app shell) |
 | `supabase-schema.sql` | One-time SQL for cloud sync, step ingestion + push |
 | `supabase-push-cron.sql` | Schedules the energy-reminder sender (pg_cron) |
-| `supabase/functions/push-energy/` | Edge function that sends Web Push reminders |
-| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading and meal logging |
+| `supabase/functions/push-energy/` | Edge function that sends Web Push reminders (energy check-ins, morning inventory summary) |
+| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading, meal logging and grocery reading |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `tools/smoke.js`, `package.json` | Headless smoke test (`npm test`) |
 | `.github/workflows/` | GitHub Pages deploy and the CI smoke test |

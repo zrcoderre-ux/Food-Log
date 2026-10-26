@@ -1,5 +1,5 @@
 /* PlateIQ service worker — offline app shell + smart runtime caching */
-const VERSION = 'plateiq-v89-2026-10-26';
+const VERSION = 'plateiq-v90-2026-10-26';
 const SHELL_CACHE = VERSION + '-shell';
 const RUNTIME_CACHE = VERSION + '-runtime';
 
@@ -48,11 +48,17 @@ self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
-// Web Push: a server-sent push (energy check-in) shows a notification even
-// when the app is fully closed.
+// Web Push: a server-sent push (energy check-in, or the morning inventory
+// reminder) shows a notification even when the app is fully closed.
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  if (data.type === 'inventory') {
+    event.waitUntil(self.registration.showNotification(data.title || 'Use soon / running low', {
+      body: data.body || '', tag: 'inventory', data: { type: 'inventory' }
+    }));
+    return;
+  }
   const title = data.title || 'How’s your energy?';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || 'Tap to log — Low · Medium · High',
@@ -65,8 +71,19 @@ self.addEventListener('push', (event) => {
 // Energy check-in notifications: an action button (or tapping the body) opens
 // the app and passes the chosen level so it can be logged.
 self.addEventListener('notificationclick', (event) => {
-  const level = event.action || '';
   event.notification.close();
+  if (event.notification.data && event.notification.data.type === 'inventory') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+        for (const c of list) {
+          if ('focus' in c) { c.postMessage({ type: 'inventory' }); return c.focus(); }
+        }
+        if (self.clients.openWindow) return self.clients.openWindow('./index.html#inventory');
+      })
+    );
+    return;
+  }
+  const level = event.action || '';
   const url = './index.html#energy=' + (level || 'ask');
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {

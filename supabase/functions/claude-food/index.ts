@@ -5,6 +5,8 @@
 //   label — read a nutrition-label photo into a custom food (macros + micros)
 //   meal  — turn a typed description and/or a meal photo into diary items,
 //           matched against the user's own foods where possible
+//   groceries — turn a receipt photo, a photo of groceries and/or a typed list
+//           into inventory items with package sizes and estimated shelf life
 //
 // Required function secrets (`supabase secrets set ...`):
 //   ANTHROPIC_API_KEY — from console.anthropic.com (API usage is billed there)
@@ -142,6 +144,60 @@ ${NUTRIENT_TABLE}
 
 summary: one or two sentences for the person, naming the biggest assumptions so they know what to check. If you could not identify any food, return an empty items list and explain why in summary.`;
 
+const GROCERY_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          emoji: { type: 'string' },
+          is_food: { type: 'boolean' },
+          match_id: { type: 'string' },
+          quantity: { type: 'number' },
+          unit: { type: 'string' },
+          servings_per_unit: { type: 'number' },
+          serving: { type: 'string' },
+          kcal: { type: 'number' },
+          protein: { type: 'number' },
+          carbs: { type: 'number' },
+          fat: { type: 'number' },
+          micros: MICROS_SCHEMA,
+          shelf_life_days: { type: 'number' },
+          low_at: { type: 'number' },
+          purchase_date: { type: 'string' },
+          note: { type: 'string' },
+        },
+        required: ['name', 'emoji', 'is_food', 'match_id', 'quantity', 'unit', 'servings_per_unit', 'serving', 'kcal', 'protein', 'carbs', 'fat', 'micros', 'shelf_life_days', 'low_at', 'purchase_date', 'note'],
+        additionalProperties: false,
+      },
+    },
+    summary: { type: 'string' },
+  },
+  required: ['items', 'summary'],
+  additionalProperties: false,
+};
+
+const GROCERY_SYSTEM = `You turn a grocery purchase into items for a person's home food inventory. You get a photo of a receipt, a photo of the groceries themselves, a typed list, or a combination, plus today's date.
+
+1. List each distinct product bought. Receipts abbreviate heavily ("GRK YGRT 32OZ", "ORG BNLS CHKN BRST"): expand them to plain names. Combine repeated lines for the same product into one item. Mark non-food lines (bags, paper towels, soap, deposits, tax, coupons) with is_food false; keep them in the list so the person can see they were skipped.
+
+2. Match to the person's catalog first. The catalog lists foods they already use as "id | name | serving | kcal per serving"; [mine] marks their own foods. When an item is the same food, set match_id to that id; otherwise "".
+
+3. Quantity and unit: quantity is how many units were bought, in the unit people count that product in at home: "eggs" for eggs (a dozen = 12 eggs), "tub", "bag", "carton", "loaf", "lb", "can", "bottle", "bunch", and so on. servings_per_unit is how many servings of the matched catalog entry (or, for a new food, of the serving you describe) one unit holds, e.g. a 32 oz tub of yogurt with a 3/4 cup serving holds about 5.3; one egg is 1 serving of a "1 large egg" entry. Use package sizes printed on the receipt or package; otherwise typical US package sizes.
+
+4. For an item with no catalog match, describe one serving in "serving" (e.g. "1 cup (30 g)") and give per-serving kcal, protein, carbs and fat; micros only for nutrients the food meaningfully provides, using these keys and units:
+${NUTRIENT_TABLE}
+For a matched item, fill these from the catalog serving as best you can and leave micros empty.
+
+5. shelf_life_days: how many days from purchase the item typically stays good when stored the usual way (fresh spinach about 5, berries 4, raw chicken 2, milk 7, eggs 28, hard cheese 30, bread 6, canned goods 365, frozen items 120). Use a date printed on the package in the photo when you can read one, converted to days from the purchase date. low_at: the quantity, in the item's unit, at which a typical household would want to buy more (e.g. 2 eggs, 0.25 tub, 0 for single items like a bag of flour that are bought when used up).
+
+6. purchase_date: the date printed on a receipt as YYYY-MM-DD, otherwise "". note: anything uncertain the person should check (e.g. "size not on receipt; assumed 16 oz"), or "".
+
+summary: one or two sentences, naming the main assumptions. If you could not read anything, return no items and explain in summary.`;
+
 type ImageIn = { media_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; data: string };
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_IMAGE_B64 = 6_500_000; // ~5 MB decoded, the API's per-image limit
@@ -169,7 +225,7 @@ Deno.serve(async (req) => {
   const denied = await authorize(req);
   if (denied) return json({ error: denied }, 401);
 
-  let body: { task?: string; image?: ImageIn; text?: string; catalog?: string; slot?: string };
+  let body: { task?: string; image?: ImageIn; text?: string; catalog?: string; slot?: string; today?: string };
   try { body = await req.json(); } catch { return json({ error: 'Bad JSON' }, 400); }
 
   if (!Deno.env.get('ANTHROPIC_API_KEY')) return json({ error: 'The ANTHROPIC_API_KEY secret is not set on the claude-food function.' }, 500);
@@ -206,21 +262,36 @@ Deno.serve(async (req) => {
     content.push({ type: 'text', text: `Default slot: ${slot}\n\n` + (text || 'Log the food in this photo.') });
     schema = MEAL_SCHEMA;
     effort = 'medium';
+  } else if (body.task === 'groceries') {
+    if (!img && !text) return json({ error: 'Add a receipt or grocery photo, or type a list' }, 400);
+    const catalog = (body.catalog || '').slice(0, 400_000);
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(body.today || '') ? body.today : new Date().toISOString().slice(0, 10);
+    system = [
+      { type: 'text', text: GROCERY_SYSTEM },
+      { type: 'text', text: 'Catalog:\n' + (catalog || '(empty)'), cache_control: { type: 'ephemeral' } },
+    ];
+    content = [];
+    if (img) content.push(imageBlock(img));
+    content.push({ type: 'text', text: `Today: ${today}\n\n` + (text || 'Add the groceries in this photo.') });
+    schema = GROCERY_SCHEMA;
+    effort = 'medium';
   } else {
     return json({ error: 'Unknown task' }, 400);
   }
 
   const client = new Anthropic();
   try {
-    const response = await client.beta.messages.create({
+    // Streamed so a long receipt can use a large output budget without the
+    // request timing out; finalMessage() collects the whole response.
+    const response = await client.beta.messages.stream({
       model: MODEL,
-      max_tokens: 16000,
+      max_tokens: 32000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: { effort, format: { type: 'json_schema', schema } },
       system,
       messages: [{ role: 'user', content }],
-    });
+    }).finalMessage();
 
     if (response.stop_reason === 'refusal') return json({ error: 'Claude declined this request.' }, 422);
     if (response.stop_reason === 'max_tokens') return json({ error: 'The response was cut off. Try fewer items at once.' }, 422);

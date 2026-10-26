@@ -807,6 +807,20 @@ textarea.field { resize: none; line-height: 1.45; }
   pointer-events: none;
 }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.action-toast {
+  position: fixed; bottom: calc(var(--tab-h) + var(--safe-bottom) + 64px); left: 50%; transform: translateX(-50%) translateY(170px);
+  width: calc(100vw - 32px); max-width: 440px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--toast-bg); color: var(--toast-text); padding: 10px 12px 10px 16px; border-radius: var(--radius);
+  font-size: 13px; line-height: 1.4; z-index: 510; box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.action-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+.action-toast .at-msg { flex: 1 1 160px; }
+.action-toast .at-btn { font-size: 13px; font-weight: 700; color: var(--toast-text); padding: 6px 10px; border-radius: 8px; border: 1px solid currentColor; }
+.inv-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 10px; }
+.inv-add-grid .btn-secondary { margin: 0; font-size: 13px; padding: 10px 6px; }
+.shop-item input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); flex-shrink: 0; }
+.shop-item.done .fli-name { text-decoration: line-through; color: var(--text3); }
 
 /* ── EMPTY STATES ── */
 .empty-state {
@@ -1316,10 +1330,49 @@ textarea.field { resize: none; line-height: 1.45; }
       <div class="section-head" style="margin:0;">🧺 Inventory</div>
       <button class="link-btn" onclick="showView('list')">← Foods</button>
     </div>
-    <div id="inv-alerts" style="padding:0 16px;"></div>
-    <div class="foods-list" id="inventory-list"></div>
-    <div style="padding:16px;">
-      <button class="btn-secondary" onclick="openAddInventory()">＋ Add item as you buy it</button>
+    <div class="log-source-tabs" role="tablist" style="padding:0 16px;">
+      <button type="button" class="log-source-tab active" id="inv-tab-stock" role="tab" aria-selected="true" onclick="invTab('stock')">At home</button>
+      <button type="button" class="log-source-tab" id="inv-tab-shop" role="tab" aria-selected="false" onclick="invTab('shop')">Shopping list <span id="shop-count"></span></button>
+    </div>
+    <div id="inv-stock-pane">
+      <div class="inv-add-grid">
+        <button class="btn-secondary" onclick="openGroceries()">🧾 Add groceries (Claude)</button>
+        <button class="btn-secondary" onclick="openScanner('inventory')">📷 Scan barcodes</button>
+      </div>
+      <div id="inv-alerts" style="padding:0 16px;"></div>
+      <div class="foods-list" id="inventory-list"></div>
+      <div style="padding:12px 16px 0;">
+        <button class="btn-secondary" onclick="openAddInventory()">＋ Add an item by hand</button>
+      </div>
+      <div class="settings-section">
+        <div class="settings-label">When I log food</div>
+        <div class="settings-row"><label for="inv-deduct">Take it from inventory</label>
+          <select id="inv-deduct" onchange="setInvDeductMode(this.value)">
+            <option value="always">Always</option>
+            <option value="home">Only when I'm home</option>
+            <option value="ask">Ask me each time</option>
+          </select>
+        </div>
+        <div id="inv-home-row" style="display:none;">
+          <div class="settings-row"><label>Home location</label><span id="inv-home-status" style="font-size:13px;color:var(--text2);"></span></div>
+          <p class="note-sm" style="margin:6px 0 8px;">Away from home, the app asks before taking anything. Your location is checked only when you log a food that's in your inventory.</p>
+          <button class="btn-secondary" onclick="setInvHome()">📍 Set home to where I am now</button>
+          <button class="link-btn" id="inv-home-clear" style="font-size:12px;" onclick="clearInvHome()">Forget home location</button>
+        </div>
+        <div class="settings-row"><label for="inv-push">Morning reminder of expiring &amp; low items</label><input type="checkbox" id="inv-push" onchange="toggleInvPush(this.checked)"></div>
+        <p class="note-sm" style="margin:4px 0 16px;">Sent at the start of your waking hours (Settings → Energy) even when the app is closed. Needs Cloud sync and the push setup in the README.</p>
+      </div>
+    </div>
+    <div id="inv-shop-pane" style="display:none;">
+      <div style="display:flex;gap:8px;padding:0 16px 10px;">
+        <input type="text" class="food-search" id="shop-input" placeholder="Add an item…" aria-label="Add to shopping list" style="margin:0;" onkeydown="if(event.key==='Enter')addShoppingFromInput()">
+        <button class="btn-primary" style="width:auto;margin:0;padding:0 16px;" onclick="addShoppingFromInput()">Add</button>
+      </div>
+      <div class="foods-list" id="shop-list"></div>
+      <div class="inv-add-grid" style="padding-top:12px;">
+        <button class="btn-secondary" onclick="shareShoppingList()">📤 Share list</button>
+        <button class="btn-secondary" id="shop-clear" onclick="clearDoneShopping()">Clear checked</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1636,7 +1689,7 @@ textarea.field { resize: none; line-height: 1.45; }
 
     <div class="settings-section">
       <div class="settings-label">Claude food assistant</div>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Reads nutrition labels into custom foods, and logs meals from a description or a photo. Runs through the <code>claude-food</code> function in your Supabase project with your own Anthropic API key (setup steps in the README). Needs the Cloud sync sign-in above.</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Reads nutrition labels into custom foods, logs meals from a description or a photo, and reads grocery receipts into your inventory. Runs through the <code>claude-food</code> function in your Supabase project with your own Anthropic API key (setup steps in the README). Needs the Cloud sync sign-in above.</p>
       <div id="claude-settings-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
       <button class="btn-secondary" onclick="testClaude()">Test connection</button>
     </div>
@@ -1775,7 +1828,11 @@ textarea.field { resize: none; line-height: 1.45; }
       <div class="form-group" style="margin:0;"><label for="inv-unit">Unit</label><input type="text" id="inv-unit" placeholder="items / oz / g"></div>
     </div>
     <div class="form-group"><label for="inv-bestby">Best-by date</label><input type="date" id="inv-bestby"></div>
-    <div class="form-group"><label for="inv-low">Alert when quantity ≤</label><input type="number" id="inv-low" value="1" min="0" step="any" inputmode="decimal"></div>
+    <div class="form-group"><label for="inv-low">Running low (adds it to the shopping list) at ≤</label><input type="number" id="inv-low" value="1" min="0" step="any" inputmode="decimal"></div>
+    <div class="form-group"><label for="inv-food">Linked food <span style="color:var(--text3);font-weight:400;">(logging it uses this up)</span></label>
+      <input type="text" id="inv-food" list="inv-food-list" placeholder="Search your foods" autocomplete="off" oninput="onInvFoodInput()"><datalist id="inv-food-list"></datalist></div>
+    <div class="form-group" id="inv-perunit-row" style="display:none;"><label for="inv-perunit">Servings per unit <span id="inv-perunit-hint" style="color:var(--text3);font-weight:400;"></span></label>
+      <input type="number" id="inv-perunit" value="1" min="0" step="any" inputmode="decimal"></div>
     <button class="btn-primary" onclick="saveInventoryItem()">Save</button>
     <button class="btn-secondary" onclick="closeModal('add-inv-modal')">Cancel</button>
   </div>
@@ -2027,6 +2084,34 @@ textarea.field { resize: none; line-height: 1.45; }
   </div>
 </div>
 
+<!-- CLAUDE: ADD GROCERIES TO INVENTORY -->
+<div class="modal-overlay" id="groceries-modal" onclick="overlayClick(event,'groceries-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gr-title" style="max-height:88dvh;overflow-y:auto;">
+    <div class="modal-title" id="gr-title">Add groceries</div>
+    <div id="gr-input">
+      <p class="cl-summary">Photograph your receipt or the groceries themselves, or type what you bought. Claude matches items to your foods and estimates how long each keeps. You'll review everything first.</p>
+      <div class="cl-photo-row">
+        <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('gr-photo-camera').click()">📷 Take photo</button>
+        <button type="button" class="btn-secondary" style="width:auto;margin:0;padding:7px 10px;font-size:13px;" onclick="document.getElementById('gr-photo-input').click()">🖼️ Choose photo</button>
+        <img id="gr-photo-preview" alt="" style="display:none;">
+        <button type="button" class="link-btn" id="gr-photo-clear" onclick="clearGroceryPhoto()" style="color:var(--text3);font-size:12px;display:none;">Remove photo</button>
+        <input type="file" id="gr-photo-camera" accept="image/*" capture="environment" style="display:none;" onchange="onGroceryPhoto(event)">
+        <input type="file" id="gr-photo-input" accept="image/*" style="display:none;" onchange="onGroceryPhoto(event)">
+      </div>
+      <textarea id="gr-text" class="cl-text" aria-label="What did you buy?" placeholder="Or type it: 2 dozen eggs, gallon of 2% milk, bag of spinach, 32 oz Greek yogurt"></textarea>
+      <button class="btn-primary" id="gr-go" style="margin-top:10px;" onclick="runGroceries()">Analyze</button>
+    </div>
+    <div id="gr-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
+    <div id="gr-review" style="display:none;">
+      <div id="gr-summary" class="cl-summary"></div>
+      <div id="gr-items"></div>
+      <button class="btn-primary" id="gr-add-btn" style="margin-top:12px;" onclick="addGroceryItems()">Add to inventory</button>
+      <button class="btn-secondary" onclick="openGroceries()">Change photo or list</button>
+    </div>
+    <button class="btn-secondary" onclick="closeModal('groceries-modal')">Cancel</button>
+  </div>
+</div>
+
 <!-- QUANTITY / CONFIRM LOG MODAL -->
 <div class="modal-overlay" id="qty-modal" onclick="overlayClick(event,'qty-modal')">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="qty-title">
@@ -2107,6 +2192,7 @@ textarea.field { resize: none; line-height: 1.45; }
 
 <!-- TOAST -->
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="action-toast" id="action-toast" role="alert"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -2861,19 +2947,26 @@ async function addOffToWillEat(id) {
 }
 
 // ── Inventory / best-by tracking ─────────────────────────────────────────────
+// What you have at home: [{ id, name, qty, unit, bestBy, low, foodId, perUnit,
+// updatedAt }]. An item linked to a food (foodId) is used up when you log that
+// food; perUnit is how many of the food's servings one unit holds (1 tub of
+// yogurt = 4.3 servings). Items that run low go on the shopping list.
 let invEditId = null;
+function invSettings() { ensureDataModel(); return state.invSettings; }
+function round2(v) { return Math.round(v * 100) / 100; }
 function invDaysLeft(it) {
   if (!it.bestBy) return null;
   const today = new Date(dkey(new Date()) + 'T00:00:00');
   const bb = new Date(it.bestBy + 'T00:00:00');
   return Math.round((bb - today) / 864e5);
 }
+function invLowAt(it) { return it.low != null ? +it.low : 1; }
 function invStatuses(it) {
   const out = [];
   const dl = invDaysLeft(it);
   if (dl != null && dl < 0) out.push({ t: 'expired', label: 'Expired', color: 'var(--warn)' });
   else if (dl != null && dl <= 3) out.push({ t: 'expiring', label: dl === 0 ? 'Best by today' : ('Best by in ' + dl + 'd'), color: 'var(--fat)' });
-  if ((+it.qty || 0) <= (it.low != null ? +it.low : 1)) out.push({ t: 'low', label: 'Running low', color: 'var(--warn)' });
+  if ((+it.qty || 0) <= invLowAt(it)) out.push({ t: 'low', label: (+it.qty || 0) > 0 ? 'Running low' : 'Used up', color: 'var(--warn)' });
   return out;
 }
 function invUrgency(it) {
@@ -2884,36 +2977,241 @@ function invUrgency(it) {
   return 0;
 }
 function inventoryAlerts() { ensureDataModel(); return state.inventory.filter(it => invStatuses(it).length); }
-function openAddInventory(editId) {
+function invTouch(it) { it.updatedAt = Date.now(); }
+function invFoodLabel(f) { return f.name + (f.serving ? ' — ' + f.serving : ''); }
+function invQtyText(it) {
+  let t = fmtQty(+it.qty || 0) + (it.unit ? ' ' + it.unit : '');
+  const f = it.foodId && getFood(it.foodId);
+  if (f && +it.perUnit > 0 && +it.perUnit !== 1) t += ` (≈${fmtQty(round2((+it.qty || 0) * it.perUnit))} × ${f.serving || 'serving'})`;
+  return t;
+}
+// Sync: keep whichever copy of an item changed last (inventory, shopping list).
+function mergeByUpdated(a, b) {
+  const map = new Map();
+  (b || []).forEach(x => { if (x && x.id) map.set(x.id, x); });
+  (a || []).forEach(x => { if (!x || !x.id) return; const o = map.get(x.id); if (!o || (x.updatedAt || 0) >= (o.updatedAt || 0)) map.set(x.id, x); });
+  return [...map.values()];
+}
+
+// ── Using up inventory when food is logged ──
+// Servings of each food used by logging `qty` of a food, recipe or saved meal.
+// A recipe kept in inventory as itself (leftovers) is used directly; otherwise
+// its ingredients are, scaled to the servings eaten.
+function invUsage(kind, refId, qty, out, depth) {
+  out = out || {}; depth = depth || 0;
+  if (!refId || !(qty > 0) || depth > 4) return out;
+  const stocked = state.inventory.some(it => it.foodId === refId && (+it.qty || 0) > 0);
+  const recipe = kind !== 'meal' && (state.recipes || []).find(r => r.id === refId);
+  if (kind === 'meal') {
+    const m = (state.savedMeals || []).find(x => x.id === refId);
+    (m ? m.items || [] : []).forEach(it => invUsage(it.recipeId ? 'recipe' : 'food', it.recipeId || it.foodId, (it.qty || 1) * qty, out, depth + 1));
+  } else if (recipe && !stocked) {
+    const per = qty / Math.max(1, +recipe.servings || 1);
+    (recipe.items || []).forEach(it => invUsage('food', it.foodId || it.recipeId, (it.qty || 1) * per, out, depth + 1));
+  } else {
+    out[refId] = (out[refId] || 0) + qty;
+  }
+  return out;
+}
+// Which inventory items to take from (soonest best-by first), in their units.
+function invPlan(usage) {
+  const plan = [];
+  Object.keys(usage).forEach(fid => {
+    let need = usage[fid];
+    const items = state.inventory.filter(it => it.foodId === fid && (+it.qty || 0) > 0)
+      .sort((a, b) => (a.bestBy || '9999-99-99').localeCompare(b.bestBy || '9999-99-99'));
+    for (const it of items) {
+      if (need <= 1e-6) break;
+      const per = +it.perUnit > 0 ? +it.perUnit : 1;
+      const units = round2(Math.min(+it.qty, need / per));
+      if (units <= 0) continue;
+      plan.push({ id: it.id, amt: units });
+      need -= units * per;
+    }
+  });
+  return plan;
+}
+// Apply a plan: sign -1 takes from inventory, +1 puts it back.
+function invApply(plan, sign) {
+  (plan || []).forEach(p => {
+    const it = state.inventory.find(x => x.id === p.id); if (!it) return;
+    const before = +it.qty || 0;
+    it.qty = Math.max(0, round2(before + sign * p.amt));
+    invTouch(it);
+    if (sign < 0 && before > invLowAt(it) && it.qty <= invLowAt(it)) shoppingAdd(it.name, { foodId: it.foodId, auto: true });
+  });
+}
+function invPlanText(plan) {
+  return plan.map(p => {
+    const it = state.inventory.find(x => x.id === p.id);
+    if (!it) return '';
+    // "2 eggs", "0.25 tub Greek yogurt", "1 Banana"
+    const unitInName = it.unit && it.name.toLowerCase().includes(it.unit.toLowerCase().replace(/e?s$/, ''));
+    const unit = p.amt === 1 ? it.unit.replace(/s$/, '') : it.unit; // "1 egg"
+    return fmtQty(p.amt) + ' ' + (it.unit ? unit + (unitInName ? '' : ' ' + it.name) : it.name);
+  }).filter(Boolean).join(', ');
+}
+function invAfterDeductRender() { saveState(); renderInventory(); renderInventoryTodayAlert(); }
+function invFindEntry(key, id) { const d = state.diary[key]; return d ? d.entries.find(e => e.id === id) : null; }
+// Called after diary entries are created. Depending on the setting, takes the
+// food from inventory right away (with Undo), asks first, or does so only when
+// the phone is at home and asks otherwise.
+function invAfterLog(key, entries) {
+  ensureDataModel();
+  const ids = entries.filter(e => e && e.refId && invPlan(invUsage(e.kind, e.refId, e.qty)).length).map(e => e.id);
+  if (!ids.length) return;
+  const mode = invSettings().deduct || 'always';
+  if (mode === 'always') return invDeduct(key, ids, true);
+  if (mode === 'ask') return invAsk(key, ids);
+  invAtHome().then(home => home ? invDeduct(key, ids, true) : invAsk(key, ids));
+}
+function invDeduct(key, ids, offerUndo) {
+  const all = [];
+  ids.forEach(id => {
+    const e = invFindEntry(key, id); if (!e || e.inv) return;
+    const plan = invPlan(invUsage(e.kind, e.refId, e.qty));
+    if (!plan.length) return;
+    invApply(plan, -1);
+    e.inv = plan;
+    all.push(...plan);
+  });
+  if (!all.length) return;
+  invAfterDeductRender();
+  const msg = 'Took ' + invPlanText(all) + ' from inventory';
+  if (offerUndo) actionToast(msg, [{ label: 'Undo', fn: () => invUndo(key, ids) }]);
+  else toast(msg);
+}
+function invUndo(key, ids) {
+  ids.forEach(id => { const e = invFindEntry(key, id); if (e && e.inv) { invApply(e.inv, 1); delete e.inv; } });
+  invAfterDeductRender();
+  toast('Put back in inventory');
+}
+function invAsk(key, ids) {
+  const plan = [];
+  ids.forEach(id => { const e = invFindEntry(key, id); if (e) plan.push(...invPlan(invUsage(e.kind, e.refId, e.qty))); });
+  if (!plan.length) return;
+  actionToast('Take ' + invPlanText(plan) + ' from inventory?', [
+    { label: 'Yes', fn: () => invDeduct(key, ids, false) },
+    { label: 'No', fn: () => {} }
+  ], 15000);
+}
+// Deleting or editing a diary entry puts back / re-scales what it took.
+function invOnEntryRemoved(e) { if (e && e.inv) { invApply(e.inv, 1); delete e.inv; invAfterDeductRender(); } }
+function invOnEntryQtyChanged(e, oldQty) {
+  if (!e || !e.inv || !(oldQty > 0) || e.qty === oldQty) return;
+  invApply(e.inv, 1);
+  e.inv = e.inv.map(p => ({ id: p.id, amt: round2(p.amt * e.qty / oldQty) }));
+  invApply(e.inv, -1);
+  invAfterDeductRender();
+}
+
+// ── Home location (for "only take from inventory when I'm home") ──
+function distanceM(a, b) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function currentPosition(timeout, maxAge) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Location isn’t available on this device')); return; }
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy || 0 }),
+      err => reject(new Error(err && err.code === 1 ? 'Location permission was denied' : 'Couldn’t get your location')),
+      { enableHighAccuracy: false, timeout: timeout || 10000, maximumAge: maxAge != null ? maxAge : 300000 });
+  });
+}
+// True only when we can tell the phone is within ~250 m of home.
+async function invAtHome() {
+  const h = invSettings().home;
+  if (!h) return false;
+  try {
+    const p = await currentPosition(8000, 0); // a fresh fix: a cached one could be from before you left
+    return distanceM(p, h) <= 250 + Math.min(p.acc, 150);
+  } catch (e) { return false; }
+}
+async function setInvHome() {
+  try {
+    toast('Getting your location…');
+    const p = await currentPosition(15000);
+    invSettings().home = { lat: round6(p.lat), lng: round6(p.lng), setAt: Date.now() };
+    saveState(); renderInvSettings(); toast('Home saved');
+  } catch (e) { toast(e.message); }
+}
+function round6(v) { return Math.round(v * 1e6) / 1e6; }
+function clearInvHome() { invSettings().home = null; saveState(); renderInvSettings(); }
+function setInvDeductMode(v) {
+  invSettings().deduct = v; saveState(); renderInvSettings();
+  if (v === 'home' && !invSettings().home) toast('Set your home location below');
+}
+
+// A toast with buttons (Undo / Yes / No). One at a time; a new one replaces it.
+let _actionToastTimer = null;
+function actionToast(msg, actions, ms) {
+  const el = document.getElementById('action-toast'); if (!el) return;
+  clearTimeout(_actionToastTimer);
+  el.innerHTML = `<span class="at-msg">${escapeHtml(msg)}</span>` +
+    actions.map((a, i) => `<button type="button" class="at-btn" data-i="${i}">${escapeHtml(a.label)}</button>`).join('');
+  el.querySelectorAll('.at-btn').forEach(b => b.onclick = () => { hideActionToast(); actions[+b.dataset.i].fn(); });
+  el.classList.add('show');
+  _actionToastTimer = setTimeout(hideActionToast, ms || 7000);
+}
+function hideActionToast() { clearTimeout(_actionToastTimer); const el = document.getElementById('action-toast'); if (el) el.classList.remove('show'); }
+
+// ── Add / edit an item by hand ──
+function invFoodOptions() {
+  const dl = document.getElementById('inv-food-list'); if (!dl) return;
+  dl.innerHTML = allFoods().map(f => `<option value="${escapeHtml(invFoodLabel(f))}"></option>`).join('');
+}
+function invFoodFromLabel(v) {
+  v = (v || '').trim(); if (!v) return null;
+  const foods = allFoods();
+  return foods.find(f => invFoodLabel(f) === v) || foods.find(f => f.name.toLowerCase() === v.toLowerCase()) || null;
+}
+function onInvFoodInput() {
+  const f = invFoodFromLabel(document.getElementById('inv-food').value);
+  document.getElementById('inv-perunit-row').style.display = f ? '' : 'none';
+  document.getElementById('inv-perunit-hint').textContent = f ? `(${f.serving || '1 serving'} each)` : '';
+  if (f && !document.getElementById('inv-name').value.trim()) document.getElementById('inv-name').value = f.name;
+}
+function openAddInventory(editId, prefill) {
   ensureDataModel();
   invEditId = editId || null;
-  const it = editId ? state.inventory.find(x => x.id === editId) : null;
-  document.getElementById('inv-modal-title').textContent = it ? 'Edit item' : 'Add to inventory';
+  const it = editId ? state.inventory.find(x => x.id === editId) : (prefill || null);
+  document.getElementById('inv-modal-title').textContent = editId ? 'Edit item' : 'Add to inventory';
+  invFoodOptions();
+  const f = it && it.foodId ? getFood(it.foodId) : null;
   document.getElementById('inv-name').value = it ? it.name : '';
   document.getElementById('inv-qty').value = it ? it.qty : 1;
   document.getElementById('inv-unit').value = it ? (it.unit || '') : '';
   document.getElementById('inv-bestby').value = it ? (it.bestBy || '') : '';
   document.getElementById('inv-low').value = it && it.low != null ? it.low : 1;
+  document.getElementById('inv-food').value = f ? invFoodLabel(f) : '';
+  document.getElementById('inv-perunit').value = it && +it.perUnit > 0 ? it.perUnit : 1;
+  onInvFoodInput();
   openModalById('add-inv-modal');
 }
 function saveInventoryItem() {
   ensureDataModel();
   const name = (document.getElementById('inv-name').value || '').trim();
   if (!name) { toast('Enter an item name'); return; }
+  const f = invFoodFromLabel(document.getElementById('inv-food').value);
+  const prev = invEditId ? state.inventory.find(x => x.id === invEditId) : null;
   const item = {
     id: invEditId || ('inv_' + Date.now() + Math.round(Math.random() * 999)),
     name,
     qty: Math.max(0, parseFloat(document.getElementById('inv-qty').value) || 0),
     unit: (document.getElementById('inv-unit').value || '').trim(),
     bestBy: document.getElementById('inv-bestby').value || '',
-    low: Math.max(0, parseFloat(document.getElementById('inv-low').value) || 0)
+    low: Math.max(0, parseFloat(document.getElementById('inv-low').value) || 0),
+    foodId: f ? f.id : null,
+    perUnit: f ? (parseFloat(document.getElementById('inv-perunit').value) || 1) : 1,
+    updatedAt: Date.now()
   };
-  if (invEditId) {
-    const i = state.inventory.findIndex(x => x.id === invEditId);
-    if (i >= 0) state.inventory[i] = item;
-  } else {
-    state.inventory.push(item);
-  }
+  if (prev) Object.assign(prev, item);
+  else if (item.foodId && state.inventory.some(x => x.foodId === item.foodId)) invAddStock(item); // top up what's there
+  else state.inventory.push(item);
+  if (item.qty > invLowAt(item)) shoppingCheckOff(item);
   saveState();
   closeModal('add-inv-modal');
   renderInventory(); renderDiary();
@@ -2922,7 +3220,10 @@ function saveInventoryItem() {
 function invAdjust(id, delta) {
   ensureDataModel();
   const it = state.inventory.find(x => x.id === id); if (!it) return;
-  it.qty = Math.max(0, Math.round(((+it.qty || 0) + delta) * 100) / 100);
+  const before = +it.qty || 0;
+  it.qty = Math.max(0, round2(before + delta));
+  invTouch(it);
+  if (delta < 0 && before > invLowAt(it) && it.qty <= invLowAt(it)) shoppingAdd(it.name, { foodId: it.foodId, auto: true });
   saveState();
   renderInventory(); renderDiary();
 }
@@ -2934,19 +3235,44 @@ function deleteInventory(id) {
   saveState();
   renderInventory(); renderDiary();
 }
+// Add (or top up) an inventory item. A linked food already in stock is topped
+// up, converting through servings when the units differ; the earlier best-by
+// date is kept so the older stock still gets flagged first.
+function invAddStock(item) {
+  ensureDataModel();
+  const ex = item.foodId && state.inventory.find(x => x.foodId === item.foodId);
+  if (ex) {
+    const exPer = +ex.perUnit > 0 ? +ex.perUnit : 1, inPer = +item.perUnit > 0 ? +item.perUnit : 1;
+    const had = +ex.qty || 0;
+    ex.qty = round2(had + item.qty * inPer / exPer);
+    if (item.bestBy && (!ex.bestBy || had <= 0 || item.bestBy < ex.bestBy)) ex.bestBy = item.bestBy;
+    invTouch(ex);
+    shoppingCheckOff(ex);
+    return ex;
+  }
+  const it = { id: 'inv_' + Date.now() + Math.round(Math.random() * 99999), name: item.name, qty: item.qty, unit: item.unit || '', bestBy: item.bestBy || '', low: item.low != null ? item.low : 1, foodId: item.foodId || null, perUnit: item.perUnit || 1, updatedAt: Date.now() };
+  state.inventory.push(it);
+  shoppingCheckOff(it);
+  return it;
+}
+
+// ── Inventory screen ──
 function invRow(it) {
   const st = invStatuses(it);
   const badges = st.map(s => `<span style="font-size:10px;font-weight:600;color:${s.color};border:1px solid ${s.color};border-radius:999px;padding:1px 7px;white-space:nowrap;">${s.label}</span>`).join(' ');
   const dl = invDaysLeft(it);
   const bbText = it.bestBy ? ('best by ' + new Date(it.bestBy + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : 'no date';
+  const f = it.foodId && getFood(it.foodId);
+  const step = +it.perUnit > 1 ? round2(1 / it.perUnit) : 1; // − / ＋ move one serving for multi-serving packages
   return `<div class="food-list-item" style="${st.length ? 'border-left:3px solid ' + (st[0].color) + ';' : ''}">
+    <span class="fli-emoji">${f ? foodIcon(f, 24) : '🧺'}</span>
     <div class="fli-info" role="button" tabindex="0" onclick="openAddInventory('${it.id}')" style="cursor:pointer;">
       <div class="fli-name">${escapeHtml(it.name)} ${badges}</div>
-      <div class="fli-macros">${fmtQty(it.qty)}${it.unit ? ' ' + escapeHtml(it.unit) : ''} · ${bbText}${dl != null && dl >= 0 && dl <= 14 ? ' · ' + dl + 'd left' : ''}</div>
+      <div class="fli-macros">${escapeHtml(invQtyText(it))} · ${bbText}${dl != null && dl >= 0 && dl <= 14 ? ' · ' + dl + 'd left' : ''}${f ? '' : ' · not linked to a food'}</div>
     </div>
-    <button type="button" onclick="invAdjust('${it.id}',-1)" title="Use one" aria-label="Use one" style="padding:6px 9px;font-size:17px;color:var(--text2);">−</button>
-    <button type="button" onclick="invAdjust('${it.id}',1)" title="Add one" aria-label="Add one" style="padding:6px 9px;font-size:16px;color:var(--accent);">＋</button>
-    <button type="button" onclick="deleteInventory('${it.id}')" title="Delete" aria-label="Delete" style="padding:6px;font-size:14px;color:var(--text3);">🗑</button>
+    <button type="button" onclick="invAdjust('${it.id}',-${step})" title="Use one" aria-label="Use one ${escapeHtml(it.name)}" style="padding:6px 9px;font-size:17px;color:var(--text2);">−</button>
+    <button type="button" onclick="invAdjust('${it.id}',${step})" title="Add one" aria-label="Add one ${escapeHtml(it.name)}" style="padding:6px 9px;font-size:16px;color:var(--accent);">＋</button>
+    <button type="button" onclick="deleteInventory('${it.id}')" title="Delete" aria-label="Delete ${escapeHtml(it.name)}" style="padding:6px;font-size:14px;color:var(--text3);">🗑</button>
   </div>`;
 }
 function renderInvAlerts() {
@@ -2957,11 +3283,13 @@ function renderInvAlerts() {
 }
 function renderInventory() {
   ensureDataModel();
+  renderShoppingList();
   const el = document.getElementById('inventory-list'); if (!el) return;
   renderInvAlerts();
+  renderInvSettings();
   const items = state.inventory;
   if (!items.length) {
-    el.innerHTML = '<div class="empty-state" style="padding:30px 16px;"><span class="es-icon">🧺</span><p>Nothing here yet. Add items as you buy them and set a best-by date.</p></div>';
+    el.innerHTML = '<div class="empty-state" style="padding:30px 16px;"><span class="es-icon">🧺</span><p>Nothing here yet. Add your groceries from a receipt, a photo or a list, or scan barcodes.</p></div>';
     return;
   }
   const sorted = items.slice().sort((a, b) => (invUrgency(b) - invUrgency(a)) || ((a.bestBy || '9999-99-99').localeCompare(b.bestBy || '9999-99-99')));
@@ -2974,6 +3302,213 @@ function renderInventoryTodayAlert() {
   if (!alerts.length) return;
   const names = alerts.slice(0, 3).map(it => escapeHtml(it.name)).join(', ');
   el.innerHTML = `⚠️ <b>${alerts.length}</b> inventory item${alerts.length > 1 ? 's' : ''} low or expiring: ${names}${alerts.length > 3 ? '…' : ''} <span style="text-decoration:underline;">View</span>`;
+}
+function invTab(which) {
+  ['stock', 'shop'].forEach(t => {
+    const on = t === which;
+    document.getElementById('inv-' + t + '-pane').style.display = on ? '' : 'none';
+    const b = document.getElementById('inv-tab-' + t); b.classList.toggle('active', on); b.setAttribute('aria-selected', on);
+  });
+}
+function renderInvSettings() {
+  const s = invSettings();
+  const sel = document.getElementById('inv-deduct'); if (!sel) return;
+  sel.value = s.deduct || 'always';
+  const homeRow = document.getElementById('inv-home-row');
+  homeRow.style.display = s.deduct === 'home' ? '' : 'none';
+  document.getElementById('inv-home-status').textContent = s.home
+    ? 'Saved ' + new Date(s.home.setAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    : 'Not set';
+  document.getElementById('inv-home-clear').style.display = s.home ? '' : 'none';
+  const push = document.getElementById('inv-push');
+  if (push) push.checked = !!s.pushOn;
+}
+
+// ── Shopping list: [{ id, name, foodId, auto, done, updatedAt }] ──
+function shoppingFind(name, foodId) {
+  const n = normalizeSearch(name);
+  return state.shopping.find(s => !s.done && ((foodId && s.foodId === foodId) || normalizeSearch(s.name) === n));
+}
+function shoppingAdd(name, opts) {
+  ensureDataModel();
+  name = (name || '').trim(); if (!name) return null;
+  const foodId = (opts && opts.foodId) || null;
+  if (shoppingFind(name, foodId)) return null;
+  const s = { id: 'sh_' + Date.now() + Math.round(Math.random() * 9999), name, foodId, auto: !!(opts && opts.auto), done: false, updatedAt: Date.now() };
+  state.shopping.push(s);
+  return s;
+}
+// Bought it: tick off a matching open shopping-list entry.
+function shoppingCheckOff(it) {
+  const s = shoppingFind(it.name, it.foodId);
+  if (s) { s.done = true; s.updatedAt = Date.now(); }
+}
+function addShoppingFromInput() {
+  const inp = document.getElementById('shop-input');
+  if (!shoppingAdd(inp.value)) { if (inp.value.trim()) toast('Already on the list'); return; }
+  inp.value = '';
+  saveState(); renderShoppingList();
+}
+function toggleShopping(id, done) {
+  const s = state.shopping.find(x => x.id === id); if (!s) return;
+  s.done = done; s.updatedAt = Date.now();
+  saveState(); renderShoppingList();
+}
+function removeShopping(id) {
+  markDeleted('sh:' + id);
+  state.shopping = state.shopping.filter(x => x.id !== id);
+  saveState(); renderShoppingList();
+}
+function clearDoneShopping() {
+  state.shopping.filter(x => x.done).forEach(x => markDeleted('sh:' + x.id));
+  state.shopping = state.shopping.filter(x => !x.done);
+  saveState(); renderShoppingList();
+}
+function shareShoppingList() {
+  const open = state.shopping.filter(x => !x.done);
+  if (!open.length) { toast('The list is empty'); return; }
+  const text = 'Shopping list\n' + open.map(x => '• ' + x.name).join('\n');
+  if (navigator.share) { navigator.share({ title: 'Shopping list', text }).catch(() => {}); return; }
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('List copied')).catch(() => toast('Copy failed'));
+}
+function renderShoppingList() {
+  ensureDataModel();
+  const open = state.shopping.filter(x => !x.done);
+  const cnt = document.getElementById('shop-count'); if (cnt) cnt.textContent = open.length ? '(' + open.length + ')' : '';
+  const el = document.getElementById('shop-list'); if (!el) return;
+  const rows = open.concat(state.shopping.filter(x => x.done));
+  el.innerHTML = rows.length ? rows.map(x => `<div class="food-list-item shop-item${x.done ? ' done' : ''}">
+      <input type="checkbox" ${x.done ? 'checked' : ''} aria-label="Bought ${escapeHtml(x.name)}" onchange="toggleShopping('${x.id}', this.checked)">
+      <div class="fli-info"><div class="fli-name">${escapeHtml(x.name)}</div>${x.auto ? '<div class="fli-macros">ran low</div>' : ''}</div>
+      <button type="button" onclick="removeShopping('${x.id}')" aria-label="Remove ${escapeHtml(x.name)}" style="padding:6px;font-size:14px;color:var(--text3);">✕</button>
+    </div>`).join('')
+    : '<div class="empty-state" style="padding:30px 16px;"><span class="es-icon">📝</span><p>Nothing to buy. Items land here when they run low, or add your own.</p></div>';
+  const clr = document.getElementById('shop-clear'); if (clr) clr.style.display = state.shopping.some(x => x.done) ? '' : 'none';
+}
+
+// ── Add groceries with Claude (receipt photo, photo of the haul, typed list) ──
+let groceryImage = null, groceryItems = [];
+function openGroceries() {
+  document.getElementById('gr-input').style.display = '';
+  document.getElementById('gr-review').style.display = 'none';
+  setClaudeStatus('gr-status', '', '');
+  openModalById('groceries-modal');
+}
+async function onGroceryPhoto(event) {
+  const file = event.target && event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  try { groceryImage = await prepClaudeImage(file); } catch (e) { toast(e.message); return; }
+  const pv = document.getElementById('gr-photo-preview');
+  pv.src = groceryImage.preview; pv.style.display = '';
+  document.getElementById('gr-photo-clear').style.display = '';
+}
+function clearGroceryPhoto() {
+  groceryImage = null;
+  document.getElementById('gr-photo-preview').style.display = 'none';
+  document.getElementById('gr-photo-clear').style.display = 'none';
+}
+function addDays(dateKey, n) { const d = new Date(dateKey + 'T00:00:00'); d.setDate(d.getDate() + n); return dkey(d); }
+function groceryResolve(it, today) {
+  const f = it.match_id ? getFood(it.match_id) : null;
+  const bought = /^\d{4}-\d{2}-\d{2}$/.test(it.purchase_date || '') && it.purchase_date <= today ? it.purchase_date : today;
+  return {
+    on: it.is_food !== false, name: f ? f.name : it.name, emoji: f ? (f.emoji || '🍽️') : Array.from(it.emoji || '🛒').slice(0, 2).join(''),
+    image: f ? f.image || null : null, foodId: f ? f.id : null, est: it,
+    qty: it.quantity > 0 ? round2(it.quantity) : 1, unit: it.unit || '', perUnit: it.servings_per_unit > 0 ? round2(it.servings_per_unit) : 1,
+    low: it.low_at >= 0 ? round2(it.low_at) : 1,
+    bestBy: it.shelf_life_days > 0 ? addDays(bought, Math.round(it.shelf_life_days)) : '',
+    note: it.note || ''
+  };
+}
+async function runGroceries() {
+  const text = document.getElementById('gr-text').value.trim();
+  if (!text && !groceryImage) { toast('Add a receipt or grocery photo, or type a list'); return; }
+  const btn = document.getElementById('gr-go'); btn.disabled = true;
+  setClaudeStatus('gr-status', 'busy', groceryImage ? 'Claude is reading your groceries…' : 'Claude is working it out…');
+  try {
+    const today = dkey(new Date());
+    const payload = { task: 'groceries', text, today, catalog: claudeCatalog() };
+    if (groceryImage) payload.image = { media_type: groceryImage.media_type, data: groceryImage.data };
+    const r = (await claudeCall(payload)).result;
+    groceryItems = (r.items || []).map(it => groceryResolve(it, today));
+    setClaudeStatus('gr-status', '', '');
+    document.getElementById('gr-summary').textContent = r.summary || '';
+    document.getElementById('gr-input').style.display = 'none';
+    document.getElementById('gr-review').style.display = '';
+    renderGroceryItems();
+  } catch (e) {
+    setClaudeStatus('gr-status', 'warn', escapeHtml(e.message));
+  } finally { btn.disabled = false; }
+}
+function renderGroceryItems() {
+  document.getElementById('gr-items').innerHTML = groceryItems.map((it, i) => {
+    const badge = it.foodId ? '<span class="cl-badge mine">Your food</span>' : (it.est.is_food === false ? '<span class="cl-badge">Not food</span>' : '<span class="cl-badge">New food</span>');
+    const sub = [it.perUnit !== 1 && it.est.serving ? `≈${fmtQty(it.perUnit)} servings (${escapeHtml(it.est.serving)}) per ${escapeHtml(it.unit || 'unit')}` : '', escapeHtml(it.note)].filter(Boolean).join(' · ');
+    return `<div class="cl-item${it.on ? '' : ' off'}">
+      <input type="checkbox" ${it.on ? 'checked' : ''} aria-label="Add ${escapeHtml(it.name)}" onchange="groceryItems[${i}].on=this.checked;renderGroceryItems()">
+      <span class="de-emoji">${foodIcon(it, 20)}</span>
+      <div class="cl-main">
+        <div class="cl-name">${escapeHtml(it.name)}${badge}</div>
+        ${sub ? `<div class="cl-sub">${sub}</div>` : ''}
+        <div class="cl-controls">
+          <input type="number" min="0" step="any" value="${it.qty}" aria-label="Quantity of ${escapeHtml(it.name)}" oninput="groceryItems[${i}].qty=Math.max(0,parseFloat(this.value)||0)">
+          <input type="text" value="${escapeHtml(it.unit)}" aria-label="Unit for ${escapeHtml(it.name)}" style="width:80px;" oninput="groceryItems[${i}].unit=this.value">
+        </div>
+        <div class="cl-controls"><span>Best by</span>
+          <input type="date" value="${it.bestBy}" aria-label="Best-by date for ${escapeHtml(it.name)}" style="width:auto;" onchange="groceryItems[${i}].bestBy=this.value">
+        </div>
+      </div>
+    </div>`;
+  }).join('') || '<div class="rec-empty" style="padding:12px;">No groceries found. Try a clearer photo or type the list.</div>';
+  const n = groceryItems.filter(x => x.on && x.qty > 0).length;
+  const btn = document.getElementById('gr-add-btn');
+  btn.textContent = n ? `Add ${n} item${n === 1 ? '' : 's'} to inventory` : 'Add to inventory';
+  btn.disabled = !n;
+}
+function addGroceryItems() {
+  ensureDataModel();
+  let n = 0;
+  groceryItems.forEach((it, i) => {
+    if (!it.on || !(it.qty > 0)) return;
+    let foodId = it.foodId;
+    if (!foodId && it.est.is_food !== false) {
+      // A new food, so logging it later uses it up.
+      const e = it.est;
+      const food = { id: 'c_' + Date.now() + '_' + i, emoji: it.emoji, image: '', name: it.name, category: 'Other', serving: e.serving || '1 serving',
+        kcal: Math.round(e.kcal || 0), protein: round2(e.protein || 0), carbs: round2(e.carbs || 0), fat: round2(e.fat || 0), tags: ['Other'], custom: true };
+      const m = microsFromClaude(e.micros); if (m) food.micros = m;
+      state.customFoods.push(food);
+      state.ratings[food.id] = 'yes';
+      foodId = food.id;
+    }
+    invAddStock({ name: it.name, qty: it.qty, unit: it.unit, bestBy: it.bestBy, low: it.low, foodId, perUnit: it.perUnit });
+    n++;
+  });
+  if (!n) return;
+  saveState();
+  closeModal('groceries-modal');
+  document.getElementById('gr-text').value = '';
+  clearGroceryPhoto();
+  groceryItems = [];
+  toast(`Added ${n} item${n === 1 ? '' : 's'} to inventory`);
+  renderInventory(); renderDiary();
+}
+
+// ── Morning reminder (expiring / low items) via Web Push ──
+async function toggleInvPush(on) {
+  ensureDataModel();
+  if (on) {
+    const ok = await ensurePushSubscription();
+    invSettings().pushOn = !!ok;
+    if (ok) toast('Morning reminders on 🔔');
+  } else {
+    invSettings().pushOn = false;
+    await dropPushSubscriptionIfUnused();
+    toast('Morning reminders off');
+  }
+  saveState(); renderInvSettings();
+  syncNow(true).catch(() => {}); // the reminder reads your inventory from Cloud sync
 }
 // Quick snack toggle from the Foods list — checked = recommend as a snack.
 function toggleSnackFromList(id, checked) {
@@ -3304,7 +3839,7 @@ function saveCustomFood() {
   const bestBy = document.getElementById('cf-bestby').value || '';
   if (bestBy) {
     ensureDataModel();
-    state.inventory.push({ id: 'inv_' + Date.now() + Math.round(Math.random() * 999), name, qty: 1, unit: '', bestBy, low: 0 });
+    state.inventory.push({ id: 'inv_' + Date.now() + Math.round(Math.random() * 999), name, qty: 1, unit: '', bestBy, low: 0, foodId: food.id, perUnit: 1, updatedAt: Date.now() });
   }
   saveState();
   closeModal('add-food-modal');
@@ -4759,7 +5294,9 @@ function ensureDataModel() {
   if (!state.microOverrides) state.microOverrides = {}; // { foodId: { vitc: 12, iron: 2, ... } }  user-entered micronutrients
   if (!state.foodOverrides) state.foodOverrides = {}; // { foodId: { kcal, protein, carbs, fat, serving, name } }  corrected values
   if (!state.foodUsage) state.foodUsage = {}; // { foodId: lastUsedTimestamp }  for search ranking
-  if (!state.inventory) state.inventory = []; // [ { id, name, qty, unit, bestBy, low } ]  pantry / best-by tracking
+  if (!state.inventory) state.inventory = []; // [ { id, name, qty, unit, bestBy, low, foodId, perUnit, updatedAt } ]  pantry / best-by tracking
+  if (!state.shopping) state.shopping = []; // [ { id, name, foodId, auto, done, updatedAt } ]
+  if (!state.invSettings) state.invSettings = { deduct: 'always', home: null, pushOn: false };
   if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
   if (state.settings && !state.settings.theme) state.settings.theme = 'auto';
@@ -4942,6 +5479,7 @@ function removeDiaryEntry(key, id) {
   const gone = d.entries.find(e => e.id === id);
   markDeleted('de:' + key + ':' + id);
   d.entries = d.entries.filter(e => e.id !== id);
+  invOnEntryRemoved(gone);
   saveState();
   if (gone) syncSlotMeal(key, gone.slot);
   renderDiary();
@@ -5012,8 +5550,9 @@ function relogSlotMeal(i) {
   ensureDataModel();
   const key = dkey(diaryDate);
   if (!state.diary[key]) state.diary[key] = { entries: [] };
+  const added = [];
   m.entries.forEach((e, idx) => {
-    state.diary[key].entries.push({
+    added.push({
       id: 'e' + Date.now() + '_' + idx + Math.round(Math.random() * 9999),
       kind: e.kind, refId: e.refId || null, name: e.name, emoji: e.emoji || '🍽️', image: e.image || null,
       slot: logTargetSlot, qty: e.qty, serving: e.serving || '',
@@ -5022,11 +5561,13 @@ function relogSlotMeal(i) {
     if (e.kind === 'food' && e.refId) markFoodUsed(e.refId);
     markSnackIfSnackSlot(e.refId, logTargetSlot);
   });
+  state.diary[key].entries.push(...added);
   saveState();
   syncSlotMeal(key, logTargetSlot);
   closeModal('log-food-modal');
   toast('Logged to ' + logTargetSlot);
   renderDiary();
+  invAfterLog(key, added);
 }
 function logSourceTab(which, el) {
   document.querySelectorAll('.log-source-tab').forEach(t => t.classList.remove('active'));
@@ -5394,7 +5935,7 @@ function confirmLog() {
     const d = state.diary[p.editKey];
     const e = d && d.entries.find(x => x.id === p.editId);
     const oldSlot = e ? e.slot : null;
-    if (e) { e.qty = qty; e.slot = slot; markSnackIfSnackSlot(e.refId, slot); saveState(); }
+    if (e) { const oldQty = e.qty; e.qty = qty; e.slot = slot; markSnackIfSnackSlot(e.refId, slot); invOnEntryQtyChanged(e, oldQty); saveState(); }
     syncSlotMeal(p.editKey, slot);
     if (oldSlot && oldSlot !== slot) syncSlotMeal(p.editKey, oldSlot);
     closeModal('qty-modal');
@@ -5404,13 +5945,14 @@ function confirmLog() {
   }
   const key = dkey(diaryDate);
   if (!state.diary[key]) state.diary[key] = { entries: [] };
-  state.diary[key].entries.push({
+  const entry = {
     id: 'e' + Date.now() + Math.round(Math.random() * 9999),
     kind: p.kind, refId: p.refId || null, name: p.name, emoji: p.emoji || '🍽️', image: p.image || null,
     slot, qty, serving: p.serving || '',
     kcal: p.kcal, protein: p.protein, carbs: p.carbs, fat: p.fat,
     micros: p.micros || null
-  });
+  };
+  state.diary[key].entries.push(entry);
   if (p.kind === 'food') markFoodUsed(p.refId);
   markSnackIfSnackSlot(p.refId, slot);
   saveState();
@@ -5418,6 +5960,7 @@ function confirmLog() {
   closeModal('qty-modal'); closeModal('log-food-modal'); closeModal('recommend-modal');
   toast('Logged to ' + slot);
   renderDiary();
+  invAfterLog(key, [entry]);
 }
 
 // ── Claude food assistant ────────────────────────────────────────────────────
@@ -5632,7 +6175,7 @@ function addClaudeItems() {
   const key = dkey(diaryDate);
   if (!state.diary[key]) state.diary[key] = { entries: [] };
   const saveFoods = document.getElementById('cl-save-foods').checked;
-  const slots = new Set(); let n = 0;
+  const slots = new Set(), added = []; let n = 0;
   claudeItems.forEach(it => {
     if (!it.on || !(it.qty > 0)) return;
     let kind = it.kind, refId = it.refId;
@@ -5645,13 +6188,14 @@ function addClaudeItems() {
       state.ratings[food.id] = 'yes';
       kind = 'food'; refId = food.id;
     }
-    state.diary[key].entries.push({
+    const entry = {
       id: 'e' + Date.now() + Math.round(Math.random() * 9999) + '_' + n,
       kind, refId, name: it.name, emoji: it.emoji || '🍽️', image: it.image || null,
       slot: it.slot, qty: it.qty, serving: it.serving || '',
       kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat,
       micros: it.micros || null
-    });
+    };
+    state.diary[key].entries.push(entry); added.push(entry);
     if (kind === 'food' && refId) markFoodUsed(refId);
     markSnackIfSnackSlot(refId, it.slot);
     slots.add(it.slot); n++;
@@ -5665,6 +6209,7 @@ function addClaudeItems() {
   claudeItems = [];
   toast(`Logged ${n} item${n === 1 ? '' : 's'}`);
   renderDiary();
+  invAfterLog(key, added);
 }
 
 // ── Barcode scanning + Open Food Facts ───────────────────────────────────────
@@ -5763,7 +6308,7 @@ async function lookupBarcode(code) {
   const statusEl = document.getElementById('scanner-status');
   statusEl.textContent = 'Looking up ' + code + '…';
   try {
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,nutriments,image_small_url,image_front_thumb_url,ingredients_text,ingredients_text_en,allergens_tags,ingredients_analysis_tags`;
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,serving_size,nutriments,image_small_url,image_front_thumb_url,ingredients_text,ingredients_text_en,allergens_tags,ingredients_analysis_tags,product_quantity,serving_quantity,quantity`;
     const r = await fetch(url);
     const j = await r.json();
     if (!j || j.status === 0 || !j.product) { showScanNotFound(code); return; }
@@ -5797,7 +6342,14 @@ async function lookupBarcode(code) {
     // Scanned foods always go straight to Will-Eat — never into the swipe queue.
     state.ratings[fid] = 'yes';
     const result = { fid, name, brand: p.brands || '', img, serving, kcal, protein, carbs, fat };
-    if (scanMode === 'recipe') {
+    // Servings per package, for inventory (e.g. 907 g tub ÷ 170 g serving).
+    const pq = num(p.product_quantity), sq = num(p.serving_quantity);
+    result.perUnit = perServing && pq > 0 && sq > 0 ? round2(pq / sq) : (!perServing && pq > 0 ? round2(pq / 100) : 1);
+    result.size = p.quantity || '';
+    if (scanMode === 'inventory') {
+      saveState();
+      showScanInventory(result);
+    } else if (scanMode === 'recipe') {
       saveState();
       showScanRecipe(result);
     } else if (scanMode === 'willeat') {
@@ -5851,6 +6403,26 @@ function showScanRecipe(p) {
     <button class="btn-primary" onclick="addScannedToRecipe('${p.fid}')">＋ Add to recipe</button>
     <button class="btn-secondary" onclick="openScanner('recipe')">Scan another</button>
     <button class="btn-secondary" onclick="backToRecipe()">Back to recipe</button>`;
+}
+function showScanInventory(p) {
+  document.getElementById('scanner-stage').style.display = 'none';
+  const el = document.getElementById('scanner-result'); el.style.display = 'block';
+  _scanInv = p;
+  el.innerHTML = `<div class="scan-product">
+      ${p.img ? `<img src="${escapeHtml(p.img)}" alt="">` : '<span style="font-size:32px;width:56px;text-align:center;">🏷️</span>'}
+      <div><div class="sp-name">${escapeHtml(p.name)}</div>${p.brand ? `<div class="sp-brand">${escapeHtml(p.brand)}</div>` : ''}
+      <div class="pick-macros" style="margin-top:3px;">${p.size ? escapeHtml(p.size) + ' · ' : ''}${p.perUnit !== 1 ? '≈' + fmtQty(p.perUnit) + ' servings of ' + escapeHtml(p.serving) : escapeHtml(p.serving)}</div></div>
+    </div>
+    <button class="btn-primary" onclick="addScannedToInventory()">＋ Add to inventory</button>
+    <button class="btn-secondary" onclick="openScanner('inventory')">Scan another</button>
+    <button class="btn-secondary" onclick="closeScanner()">Done</button>`;
+}
+let _scanInv = null;
+// Opens the inventory sheet prefilled so you can set the count and best-by date.
+function addScannedToInventory() {
+  const p = _scanInv; if (!p) return;
+  closeScanner();
+  openAddInventory(null, { name: p.name, qty: 1, unit: 'package', bestBy: '', low: p.perUnit > 1 ? 0.25 : 1, foodId: p.fid, perUnit: p.perUnit });
 }
 function addScannedToRecipe(fid) { closeScanner(); recipeBuildAddFood(fid); }
 function backToRecipe() { closeScanner(); openModalById('recipe-build-modal'); renderRecipeBuilder(); }
@@ -6341,7 +6913,9 @@ function mergeCloudInto(cloud) {
   state.healthDaily = mergeDaily(state.healthDaily, cloud.healthDaily);
   state.microOverrides = { ...(cloud.microOverrides || {}), ...(state.microOverrides || {}) };
   state.hydration = mergeDaily(state.hydration, cloud.hydration);
-  state.inventory = unionById(state.inventory, cloud.inventory).filter(x => !tombed('inv:' + x.id));
+  state.inventory = mergeByUpdated(state.inventory, cloud.inventory).filter(x => !tombed('inv:' + x.id));
+  state.shopping = mergeByUpdated(state.shopping, cloud.shopping).filter(x => !tombed('sh:' + x.id));
+  if (cloud.invSettings && cloudNewer) state.invSettings = { ...state.invSettings, ...cloud.invSettings };
   state.foodOverrides = { ...(cloud.foodOverrides || {}), ...(state.foodOverrides || {}) };
   persistLocal();
 }
@@ -6611,6 +7185,14 @@ function handleEnergyHash() {
   if (ENERGY_LEVELS[lvl]) logEnergy(lvl); else openEnergyPrompt();
   return true;
 }
+// The morning inventory reminder opens the app on the inventory screen.
+function openInventoryScreen() { switchTab('foods'); showView('inventory'); }
+function handleInventoryHash() {
+  if (location.hash !== '#inventory') return false;
+  history.replaceState(null, '', location.pathname + location.search);
+  openInventoryScreen();
+  return true;
+}
 
 // ── Web Push (closed-app energy reminders, via Supabase) ─────────────────────
 const DEFAULT_VAPID_PUBLIC = 'BMcYU_XYg6fCZVBNaSbzM_P7UEIvEWldDaViB7TNOCoDQtv5NkDt0qMCfHlxOQsZRxiUD_PuhYjP83mySomHxaQ';
@@ -6633,13 +7215,16 @@ function pushConfigBody() {
     updated_at: new Date().toISOString()
   };
 }
-async function subscribeEnergyPush() {
+// One push subscription per device (a plateiq_push row) carries both the energy
+// check-ins and the morning inventory reminder; the server reads which ones are
+// on from your synced settings.
+async function ensurePushSubscription() {
   ensureDataModel();
-  if (!sbAuthed()) { toast('Turn on Cloud sync (sign in) first'); return; }
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) { toast('Push isn’t supported on this browser'); return; }
+  if (!sbAuthed()) { toast('Turn on Cloud sync (sign in) first'); return false; }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) { toast('Push isn’t supported on this browser'); return false; }
   try {
     const perm = await Notification.requestPermission();
-    if (perm !== 'granted') { toast('Notification permission denied'); return; }
+    if (perm !== 'granted') { toast('Notification permission denied'); return false; }
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic()) });
@@ -6647,23 +7232,35 @@ async function subscribeEnergyPush() {
     const r = await sbAuthedFetch('/rest/v1/plateiq_push?on_conflict=user_id', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body)
     });
-    if (r.ok) { state.energy.pushOn = true; state.energy.notify = true; saveState(); renderEnergySettings(); toast('Background reminders on 🔔'); }
-    else { toast('Couldn’t save push subscription (run the SQL setup?)'); }
-  } catch (e) { toast('Push setup failed: ' + (e.message || e)); }
+    if (!r.ok) { toast('Couldn’t save push subscription (run the SQL setup?)'); return false; }
+    return true;
+  } catch (e) { toast('Push setup failed: ' + (e.message || e)); return false; }
 }
-async function unsubscribeEnergyPush() {
+async function dropPushSubscriptionIfUnused() {
   ensureDataModel();
+  if (state.energy.pushOn || state.invSettings.pushOn) return;
   try {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription();
     if (sub) await sub.unsubscribe();
     if (sbAuthed()) await sbAuthedFetch('/rest/v1/plateiq_push?user_id=eq.' + state.sync.userId, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   } catch (e) {}
-  state.energy.pushOn = false; saveState(); renderEnergySettings(); toast('Background reminders off');
+}
+async function subscribeEnergyPush() {
+  if (!(await ensurePushSubscription())) return;
+  state.energy.pushOn = true; state.energy.notify = true; saveState(); renderEnergySettings(); toast('Background reminders on 🔔');
+  syncNow(true).catch(() => {});
+}
+async function unsubscribeEnergyPush() {
+  ensureDataModel();
+  state.energy.pushOn = false; saveState();
+  await dropPushSubscriptionIfUnused();
+  renderEnergySettings(); toast('Background reminders off');
+  syncNow(true).catch(() => {});
 }
 // Keep the server's copy of cadence/waking/tz current when push is on.
 async function updatePushConfig() {
-  if (!state.energy.pushOn || !sbAuthed()) return;
+  if (!(state.energy.pushOn || (state.invSettings && state.invSettings.pushOn)) || !sbAuthed()) return;
   try {
     await sbAuthedFetch('/rest/v1/plateiq_push?user_id=eq.' + state.sync.userId, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(pushConfigBody())
@@ -7123,7 +7720,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v89 · 2026-10-26';
+const APP_VERSION = 'v90 · 2026-10-26';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');
@@ -7194,11 +7791,13 @@ window.addEventListener('focus', resyncOnResume);
 
 // Energy check-ins: handle a notification tap, listen for SW messages, and poll.
 handleEnergyHash();
+handleInventoryHash();
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (ev) => {
     if (ev.data && ev.data.type === 'energy') {
       if (ENERGY_LEVELS[ev.data.level]) logEnergy(ev.data.level); else openEnergyPrompt();
     }
+    if (ev.data && ev.data.type === 'inventory') openInventoryScreen();
   });
 }
 energyTick();

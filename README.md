@@ -244,6 +244,45 @@ Foods → **🧺 Inventory & best-by**.
   `supabase/functions/push-energy/index.ts`, Deploy). If you already deployed
   `claude-food`, redeploy it the same way to get grocery reading.
 
+## Log food with Siri
+
+Say **"Hey Siri, log food"**, then what you ate ("two eggs and a slice of
+sourdough for breakfast"). Claude matches it to your foods and the items appear
+in your diary, marked 🎙️, the next time the app syncs (when you open it). Siri
+stays quiet unless something goes wrong. Works from the lock screen, AirPods,
+CarPlay and Apple Watch.
+
+It uses Apple's Shortcuts app, your `claude-food` function, and a small inbox
+table in Supabase:
+
+1. **Re-run `supabase-schema.sql`** in the SQL Editor (it adds the
+   `plateiq_inbox` table; safe to re-run), and redeploy `claude-food` with the
+   current code.
+2. In PlateIQ → Settings → **Claude food assistant** → **Log food with Siri**,
+   note the **URL** and **Token** (or tap **Copy Siri shortcut details**). The
+   token is private: anyone who has it can log food to your diary.
+3. In **Shortcuts**, tap **+** and name the shortcut **Log food** (the name is
+   what you say to Siri). Add these actions in order:
+   1. **Ask for Input**: type Text, prompt `What did you eat?`
+   2. **Get Current Location** (optional; lets "Only when I'm home" work by voice)
+   3. **Get Contents of URL**: the URL from step 2. Tap the arrow to expand:
+      Method **POST**; Headers `Content-Type` = `application/json`; Request
+      Body **JSON** with Text fields
+      - `task` = `siri`
+      - `token` = your token
+      - `text` = the **Provided Input** variable
+      - `lat` = **Current Location**, then tap it and pick **Latitude**
+      - `lng` = **Current Location** → **Longitude**
+   4. **Get Dictionary Value**: Get **Value** for key `error` in **Contents of URL**
+   5. **If** Dictionary Value **has any value** → **Speak Text**
+      `Couldn't log that: ` + Dictionary Value → **End If**
+4. Run it once by tapping it, and allow location and the connection to
+   supabase.co when asked. After that, just ask Siri.
+
+Food logged by voice follows your inventory setting. With **Only when I'm
+home**, the location the shortcut sent decides; without one, the app asks when
+it adds the entries.
+
 ## Food data sources
 
 Name search queries **Open Food Facts** (millions of mostly packaged/branded
@@ -298,7 +337,7 @@ findings of the last full review and what was deferred.
 | `supabase-schema.sql` | One-time SQL for cloud sync, step ingestion + push |
 | `supabase-push-cron.sql` | Schedules the energy-reminder sender (pg_cron) |
 | `supabase/functions/push-energy/` | Edge function that sends Web Push reminders (energy check-ins, morning inventory summary) |
-| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading, meal logging and grocery reading |
+| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading, meal logging, grocery reading and Siri logging |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `tools/smoke.js`, `package.json` | Headless smoke test (`npm test`) |
 | `.github/workflows/` | GitHub Pages deploy and the CI smoke test |

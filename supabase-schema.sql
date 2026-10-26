@@ -8,6 +8,8 @@
 --    • plateiq_steps  — per-day step counts pushed from Apple Health / phone
 --    • plateiq_tokens — a per-user secret token used by the zero-touch Shortcut
 --    • ingest_steps() — an RPC the Shortcut calls with only the public anon key
+--    • plateiq_push   — Web Push subscriptions for closed-app reminders
+--    • plateiq_inbox  — food logged by voice (Siri), waiting for the app
 --  Row-Level Security ensures every user can only ever read/write their own rows.
 -- ============================================================================
 
@@ -119,4 +121,22 @@ create policy "own push update" on public.plateiq_push
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "own push delete" on public.plateiq_push;
 create policy "own push delete" on public.plateiq_push
+  for delete using (auth.uid() = user_id);
+
+-- ── Siri inbox: food logged by voice, waiting for the app to add it ─────────
+-- The claude-food edge function (service role) inserts one row per Siri log;
+-- the app reads its own rows on sync, adds them to the diary, then deletes them.
+create table if not exists public.plateiq_inbox (
+  id         bigint generated always as identity primary key,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  payload    jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.plateiq_inbox enable row level security;
+
+drop policy if exists "own inbox select" on public.plateiq_inbox;
+create policy "own inbox select" on public.plateiq_inbox
+  for select using (auth.uid() = user_id);
+drop policy if exists "own inbox delete" on public.plateiq_inbox;
+create policy "own inbox delete" on public.plateiq_inbox
   for delete using (auth.uid() = user_id);

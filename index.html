@@ -1692,6 +1692,13 @@ textarea.field { resize: none; line-height: 1.45; }
       <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Reads nutrition labels into custom foods, logs meals from a description or a photo, and reads grocery receipts into your inventory. Runs through the <code>claude-food</code> function in your Supabase project with your own Anthropic API key (setup steps in the README). Needs the Cloud sync sign-in above.</p>
       <div id="claude-settings-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
       <button class="btn-secondary" onclick="testClaude()">Test connection</button>
+      <div class="settings-label" style="margin-top:16px;">Log food with Siri</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5;">Say “Hey Siri, log food” and what you ate; it's added to your diary the next time the app syncs. Build the shortcut with these two values (steps in the README). The token is private: anyone with it can log food to your diary.</p>
+      <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 12px;font-size:11px;word-break:break-all;line-height:1.7;">
+        <div><span style="color:var(--text3);">URL</span><br><code id="siri-url"></code></div>
+        <div style="margin-top:6px;"><span style="color:var(--text3);">Token</span><br><code id="siri-token"></code></div>
+      </div>
+      <button class="btn-secondary" style="margin-top:8px;" onclick="copySiriDetails()">Copy Siri shortcut details</button>
     </div>
 
     <div class="settings-section">
@@ -3056,14 +3063,21 @@ function invFindEntry(key, id) { const d = state.diary[key]; return d ? d.entrie
 // Called after diary entries are created. Depending on the setting, takes the
 // food from inventory right away (with Undo), asks first, or does so only when
 // the phone is at home and asks otherwise.
-function invAfterLog(key, entries) {
+// `where` is a location reported with the log (Siri); without it, home mode
+// checks where the phone is now.
+function invAfterLog(key, entries, where) {
   ensureDataModel();
   const ids = entries.filter(e => e && e.refId && invPlan(invUsage(e.kind, e.refId, e.qty)).length).map(e => e.id);
   if (!ids.length) return;
   const mode = invSettings().deduct || 'always';
   if (mode === 'always') return invDeduct(key, ids, true);
   if (mode === 'ask') return invAsk(key, ids);
+  if (where !== undefined) return invNearHome(where) ? invDeduct(key, ids, true) : invAsk(key, ids);
   invAtHome().then(home => home ? invDeduct(key, ids, true) : invAsk(key, ids));
+}
+function invNearHome(p) {
+  const h = invSettings().home;
+  return !!(h && p && isFinite(p.lat) && isFinite(p.lng) && distanceM(p, h) <= 250 + Math.min(+p.acc || 0, 150));
 }
 function invDeduct(key, ids, offerUndo) {
   const all = [];
@@ -3123,11 +3137,9 @@ function currentPosition(timeout, maxAge) {
 }
 // True only when we can tell the phone is within ~250 m of home.
 async function invAtHome() {
-  const h = invSettings().home;
-  if (!h) return false;
+  if (!invSettings().home) return false;
   try {
-    const p = await currentPosition(8000, 0); // a fresh fix: a cached one could be from before you left
-    return distanceM(p, h) <= 250 + Math.min(p.acc, 150);
+    return invNearHome(await currentPosition(8000, 0)); // a fresh fix: a cached one could be from before you left
   } catch (e) { return false; }
 }
 async function setInvHome() {
@@ -5297,6 +5309,7 @@ function ensureDataModel() {
   if (!state.inventory) state.inventory = []; // [ { id, name, qty, unit, bestBy, low, foodId, perUnit, updatedAt } ]  pantry / best-by tracking
   if (!state.shopping) state.shopping = []; // [ { id, name, foodId, auto, done, updatedAt } ]
   if (!state.invSettings) state.invSettings = { deduct: 'always', home: null, pushOn: false };
+  if (!state.inboxDone) state.inboxDone = []; // Siri inbox row ids already added (see pullSiriInbox)
   if (!state.hydration) state.hydration = {}; // { 'YYYY-MM-DD': { oz, syncedAt } }  water intake
   if (state.settings && state.settings.waterGoal == null) state.settings.waterGoal = 64;
   if (state.settings && !state.settings.theme) state.settings.theme = 'auto';
@@ -5462,7 +5475,7 @@ function renderDiaryMeals(key) {
       return `<div class="diary-entry">
         <span class="de-emoji">${foodIcon(e, 18)}</span>
         <div class="de-main" role="button" tabindex="0" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;"><div class="de-name">${escapeHtml(e.name)}</div>
-          <div class="de-sub">${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)} · tap to edit</div></div>
+          <div class="de-sub">${e.via === 'siri' ? '🎙️ ' : ''}${qtyLabel}${e.serving ? escapeHtml(e.serving) + ' · ' : ''}P${Math.round(e.protein * e.qty)} C${Math.round(e.carbs * e.qty)} F${Math.round(e.fat * e.qty)} · tap to edit</div></div>
         <span class="de-kcal" onclick="editDiaryEntry('${key}','${e.id}')" style="cursor:pointer;">${ek}</span>
         <button type="button" class="de-del" onclick="removeDiaryEntry('${key}','${e.id}')" aria-label="Remove ${escapeHtml(e.name)}">✕</button>
       </div>`;
@@ -6099,7 +6112,7 @@ function claudeCatalog() {
 }
 // One Claude item → what we'd log. A catalog match uses the app's own stored
 // nutrition; otherwise Claude's per-serving estimate.
-function claudeResolve(it) {
+function claudeResolve(it, defSlot) {
   let base = null;
   const mid = it.match_id || '';
   if (mid.startsWith('meal:')) {
@@ -6110,7 +6123,7 @@ function claudeResolve(it) {
     if (f) base = { kind: f.recipe ? 'recipe' : 'food', refId: f.id, name: f.name, emoji: f.recipe ? '📖' : (f.emoji || '🍽️'), image: f.image || null, serving: f.serving, kcal: +f.kcal || 0, protein: +f.protein || 0, carbs: +f.carbs || 0, fat: +f.fat || 0, micros: foodMicros(f) };
   }
   if (!base) base = { kind: 'food', refId: null, name: it.name, emoji: Array.from(it.emoji || '🍽️').slice(0, 2).join(''), image: null, serving: it.serving, kcal: +it.kcal || 0, protein: +it.protein || 0, carbs: +it.carbs || 0, fat: +it.fat || 0, micros: microsFromClaude(it.micros) };
-  const slot = MEAL_SECTIONS.includes(it.slot) ? it.slot : document.getElementById('cl-slot').value;
+  const slot = MEAL_SECTIONS.includes(it.slot) ? it.slot : (defSlot || document.getElementById('cl-slot').value);
   return { ...base, qty: it.servings > 0 ? Math.round(it.servings * 100) / 100 : 1, slot, confidence: it.confidence, assumption: it.assumption || '', on: true };
 }
 async function runClaudeMeal() {
@@ -6927,7 +6940,8 @@ async function pushCloud() {
     await sbAuthedFetch('/rest/v1/plateiq_state?on_conflict=user_id', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ user_id: state.sync.userId, data: serializableState(), updated_at: new Date().toISOString() })
+      // claudeCatalog + deviceTz let Siri logging (server side) match your foods and pick the meal.
+      body: JSON.stringify({ user_id: state.sync.userId, data: { ...serializableState(), claudeCatalog: claudeCatalog(), deviceTz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }, updated_at: new Date().toISOString() })
     });
     lastNetOk = true; setSyncStatus('synced');
   } catch (e) { lastNetOk = false; setSyncStatus('offline'); }
@@ -6953,6 +6967,55 @@ async function pullSteps() {
     persistLocal();
   } catch (e) {}
 }
+// Food logged by voice: the claude-food function leaves each Siri log in
+// plateiq_inbox; add it to the diary, then delete it. inboxDone guards against
+// adding a row twice if the delete fails.
+async function pullSiriInbox() {
+  if (!sbAuthed()) return;
+  let rows;
+  try {
+    const r = await sbAuthedFetch('/rest/v1/plateiq_inbox?select=id,payload,created_at&order=id&user_id=eq.' + state.sync.userId, {});
+    if (!r.ok) return;
+    rows = await r.json();
+  } catch (e) { return; }
+  if (!rows || !rows.length) return;
+  ensureDataModel();
+  let n = 0;
+  rows.forEach(row => {
+    if (state.inboxDone.includes(row.id)) return;
+    n += importSiriLog(row.payload || {});
+    state.inboxDone.push(row.id);
+  });
+  state.inboxDone = state.inboxDone.slice(-200);
+  persistLocal();
+  try {
+    await sbAuthedFetch('/rest/v1/plateiq_inbox?id=in.(' + rows.map(r => r.id).join(',') + ')', { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  } catch (e) {}
+  if (n) { renderDiary(); toast(`Added ${n} item${n === 1 ? '' : 's'} you logged with Siri`); }
+}
+function importSiriLog(p) {
+  const key = /^\d{4}-\d{2}-\d{2}$/.test(p.date || '') ? p.date : dkey(new Date());
+  if (!state.diary[key]) state.diary[key] = { entries: [] };
+  const added = [], slots = new Set();
+  (p.items || []).forEach((raw, i) => {
+    const it = claudeResolve(raw, MEAL_SECTIONS.includes(p.slot) ? p.slot : defaultSlot());
+    if (!(it.qty > 0)) return;
+    const entry = {
+      id: 'e' + Date.now() + Math.round(Math.random() * 9999) + '_s' + i,
+      kind: it.kind, refId: it.refId, name: it.name, emoji: it.emoji || '🍽️', image: it.image || null,
+      slot: it.slot, qty: it.qty, serving: it.serving || '',
+      kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, micros: it.micros || null, via: 'siri'
+    };
+    state.diary[key].entries.push(entry); added.push(entry); slots.add(it.slot);
+    if (it.kind === 'food' && it.refId) markFoodUsed(it.refId);
+    markSnackIfSnackSlot(it.refId, it.slot);
+  });
+  saveState();
+  slots.forEach(sl => syncSlotMeal(key, sl));
+  // Home mode uses the location the shortcut sent; without one, it asks.
+  invAfterLog(key, added, p.where || null);
+  return added.length;
+}
 async function ensureIngestToken() {
   if (!sbAuthed() || state.sync.ingestToken) return;
   const token = 'piq_' + cryptoRandom(18);
@@ -6974,11 +7037,18 @@ async function syncNow(silent) {
   try {
     mergeCloudInto(await pullCloud());
     await pullSteps();
+    await pullSiriInbox();
     await ensureIngestToken();
     await pushCloud();
     renderDiary(); renderSyncSettings();
     if (!silent) toast('Synced');
   } finally { _syncing = false; }
+}
+function siriEndpoint() { return sbUrlBase() + '/functions/v1/claude-food'; }
+function copySiriDetails() {
+  if (!state.sync.ingestToken) { toast('Sign in to Cloud sync and sync first'); return; }
+  const text = 'URL: ' + siriEndpoint() + '\nToken: ' + state.sync.ingestToken;
+  if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Copied Siri details')).catch(() => toast('Copy failed'));
 }
 function copyIngest() {
   const text = 'Endpoint: ' + ingestEndpoint() + '\nToken: ' + (state.sync.ingestToken || '') + '\napikey: ' + sbAnon();
@@ -6999,6 +7069,8 @@ function renderSyncSettings() {
     if (t('sb-user')) t('sb-user').textContent = s.userEmail || '—';
     if (t('sb-ingest-url')) t('sb-ingest-url').textContent = ingestEndpoint();
     if (t('sb-ingest-token')) t('sb-ingest-token').textContent = s.ingestToken || '(syncing…)';
+    if (t('siri-url')) t('siri-url').textContent = siriEndpoint();
+    if (t('siri-token')) t('siri-token').textContent = s.ingestToken || '(syncing…)';
   }
 }
 
@@ -7720,7 +7792,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v90 · 2026-10-26';
+const APP_VERSION = 'v91 · 2026-10-26';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

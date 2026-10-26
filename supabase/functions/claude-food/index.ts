@@ -1,12 +1,14 @@
 // PlateIQ — Claude food assistant (Supabase Edge Function, Deno).
 //
 // The app calls this with the signed-in user's Cloud sync session. It keeps the
-// Anthropic API key server-side and runs one of two fixed tasks:
+// Anthropic API key server-side and runs one of these fixed tasks:
 //   label — read a nutrition-label photo into a custom food (macros + micros)
 //   meal  — turn a typed description and/or a meal photo into diary items,
 //           matched against the user's own foods where possible
 //   groceries — turn a receipt photo, a photo of groceries and/or a typed list
 //           into inventory items with package sizes and estimated shelf life
+//   siri  — a Siri shortcut sends what you said (and where you are); it's
+//           turned into diary items and left in plateiq_inbox for the app
 //
 // Required function secrets (`supabase secrets set ...`):
 //   ANTHROPIC_API_KEY — from console.anthropic.com (API usage is billed there)
@@ -202,16 +204,45 @@ type ImageIn = { media_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_IMAGE_B64 = 6_500_000; // ~5 MB decoded, the API's per-image limit
 
-async function authorize(req: Request): Promise<string | null> {
-  const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!token) return 'Sign in to Cloud sync first.';
-  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-  const { data, error } = await sb.auth.getUser(token);
-  if (error || !data.user) return 'Your Cloud sync session expired. Sign in again.';
+const admin = () => createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+// The app signs in with the user's Cloud sync session (Authorization header).
+// A Siri shortcut can't hold a session, so it sends the user's personal ingest
+// token instead (the same one the Apple Health steps shortcut uses).
+async function authorize(req: Request, token?: string): Promise<{ userId: string } | { error: string }> {
+  const sb = admin();
+  let user;
+  const jwt = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (jwt) {
+    const { data, error } = await sb.auth.getUser(jwt);
+    if (error || !data.user) return { error: 'Your Cloud sync session expired. Sign in again.' };
+    user = data.user;
+  } else if (token) {
+    const { data: row } = await sb.from('plateiq_tokens').select('user_id').eq('token', token).maybeSingle();
+    if (!row) return { error: 'That Siri token is not valid. Copy it again from PlateIQ settings.' };
+    try {
+      const { data, error } = await sb.auth.admin.getUserById(row.user_id);
+      if (error || !data.user) throw error;
+      user = data.user;
+    } catch { return { error: 'That Siri token is not valid. Copy it again from PlateIQ settings.' }; }
+  } else {
+    return { error: 'Sign in to Cloud sync first.' };
+  }
   const allowed = (Deno.env.get('ALLOWED_EMAILS') || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-  if (!allowed.length) return 'The ALLOWED_EMAILS secret is not set on the claude-food function.';
-  if (!allowed.includes((data.user.email || '').toLowerCase())) return 'This account is not on the claude-food allow list.';
-  return null;
+  if (!allowed.length) return { error: 'The ALLOWED_EMAILS secret is not set on the claude-food function.' };
+  if (!allowed.includes((user.email || '').toLowerCase())) return { error: 'This account is not on the claude-food allow list.' };
+  return { userId: user.id };
+}
+
+// Local date and default meal for "now" in the user's timezone (same rule as the app).
+function localSlot(tz: string) {
+  let parts: Record<string, string>;
+  try {
+    parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false })
+      .formatToParts(new Date()).map((p) => [p.type, p.value]));
+  } catch { return localSlot('UTC'); }
+  const h = Number(parts.hour) % 24;
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, slot: h < 11 ? 'Breakfast' : h < 16 ? 'Lunch' : h < 21 ? 'Dinner' : 'Snacks' };
 }
 
 function imageBlock(img: ImageIn): Anthropic.Beta.BetaImageBlockParam {
@@ -222,11 +253,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
 
-  const denied = await authorize(req);
-  if (denied) return json({ error: denied }, 401);
-
-  let body: { task?: string; image?: ImageIn; text?: string; catalog?: string; slot?: string; today?: string };
+  let body: {
+    task?: string; image?: ImageIn; text?: string; catalog?: string; slot?: string; today?: string;
+    token?: string; lat?: number | string; lng?: number | string;
+  };
   try { body = await req.json(); } catch { return json({ error: 'Bad JSON' }, 400); }
+
+  const auth = await authorize(req, body.token);
+  if ('error' in auth) return json({ error: auth.error }, 401);
 
   if (!Deno.env.get('ANTHROPIC_API_KEY')) return json({ error: 'The ANTHROPIC_API_KEY secret is not set on the claude-food function.' }, 500);
   if (body.task === 'ping') return json({ ok: true });
@@ -241,6 +275,7 @@ Deno.serve(async (req) => {
   let content: Anthropic.Beta.BetaContentBlockParam[];
   let schema: Record<string, unknown>;
   let effort: 'low' | 'medium';
+  let siri: { date: string; slot: string } | null = null;
 
   if (body.task === 'label') {
     if (!img) return json({ error: 'No photo' }, 400);
@@ -260,6 +295,20 @@ Deno.serve(async (req) => {
     content = [];
     if (img) content.push(imageBlock(img));
     content.push({ type: 'text', text: `Default slot: ${slot}\n\n` + (text || 'Log the food in this photo.') });
+    schema = MEAL_SCHEMA;
+    effort = 'medium';
+  } else if (body.task === 'siri') {
+    // Voice logging: the catalog and timezone come from the user's synced state,
+    // and the result goes to their inbox for the app to add to the diary.
+    if (!text) return json({ error: 'I didn’t catch what you ate.' }, 400);
+    const { data: st } = await admin().from('plateiq_state').select('data').eq('user_id', auth.userId).maybeSingle();
+    const synced = (st?.data || {}) as { claudeCatalog?: string; deviceTz?: string };
+    siri = localSlot(synced.deviceTz || 'UTC');
+    system = [
+      { type: 'text', text: MEAL_SYSTEM },
+      { type: 'text', text: 'Catalog:\n' + ((synced.claudeCatalog || '').slice(0, 400_000) || '(empty)'), cache_control: { type: 'ephemeral' } },
+    ];
+    content = [{ type: 'text', text: `Default slot: ${siri.slot}\n\nThe person said this to Siri, so expect speech-to-text errors: ${text}` }];
     schema = MEAL_SCHEMA;
     effort = 'medium';
   } else if (body.task === 'groceries') {
@@ -297,7 +346,19 @@ Deno.serve(async (req) => {
     if (response.stop_reason === 'max_tokens') return json({ error: 'The response was cut off. Try fewer items at once.' }, 422);
     const out = response.content.find((b) => b.type === 'text');
     if (!out || out.type !== 'text') return json({ error: 'Claude returned no answer' }, 502);
-    return json({ result: JSON.parse(out.text), usage: response.usage });
+    const result = JSON.parse(out.text);
+    if (siri) {
+      if (!result.items?.length) return json({ error: result.summary || 'I couldn’t tell what food that was.' }, 422);
+      const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+      const lat = num(body.lat), lng = num(body.lng);
+      const { error } = await admin().from('plateiq_inbox').insert({
+        user_id: auth.userId,
+        payload: { date: siri.date, slot: siri.slot, text, items: result.items, summary: result.summary, where: lat != null && lng != null ? { lat, lng } : null },
+      });
+      if (error) return json({ error: 'Couldn’t save it (run the latest supabase-schema.sql).' }, 500);
+      return json({ ok: true, summary: result.summary });
+    }
+    return json({ result, usage: response.usage });
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) return json({ error: 'The Anthropic API key was rejected.' }, 502);
     if (e instanceof Anthropic.RateLimitError) return json({ error: 'Rate limited by the Anthropic API. Try again in a minute.' }, 429);

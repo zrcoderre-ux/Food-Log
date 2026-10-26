@@ -1,6 +1,6 @@
 {
   "name": "plateiq",
-  "version": "90.0.0",
+  "version": "91.0.0",
   "private": true,
   "description": "PlateIQ — an installable, offline-capable food and macro tracker. Static site, no build step.",
   "scripts": {

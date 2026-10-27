@@ -584,6 +584,17 @@ textarea.field { resize: none; line-height: 1.45; }
 .ms-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
 .ms-tip { position: absolute; pointer-events: none; background: var(--toast-bg); color: var(--toast-text); font-size: 11px; line-height: 1.4; padding: 5px 8px; border-radius: 6px; white-space: nowrap; z-index: 5; box-shadow: var(--shadow); }
 @media (max-width: 340px) { .ms-body { flex-direction: column; align-items: stretch; } .ms-donuts { justify-content: center; } }
+.ma-sub { font-size: 11px; color: var(--text3); line-height: 1.45; margin: -4px 0 10px; }
+.ma-head, .ma-row { display: grid; grid-template-columns: minmax(0, 7.5em) 1fr 3.4em 3.6em; align-items: center; gap: 8px; }
+.ma-head { font-size: 10px; font-weight: 600; color: var(--text3); margin-bottom: 4px; }
+.ma-head span:nth-child(n+3) { text-align: right; }
+.ma-row { font-size: 12px; padding: 4px 0; }
+.ma-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ma-bar { height: 6px; background: var(--surface2); border-radius: 999px; overflow: hidden; position: relative; }
+.ma-fill { height: 100%; border-radius: 999px; }
+.ma-avg { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.ma-today { text-align: right; color: var(--text3); font-variant-numeric: tabular-nums; }
+.ma-row.nodata .ma-name, .ma-row.nodata .ma-avg { color: var(--text3); }
 .meal-name-row { display: flex; gap: 8px; align-items: center; }
 .meal-name-input {
   flex: 1;
@@ -1266,6 +1277,14 @@ textarea.field { resize: none; line-height: 1.45; }
         </table>
       </div>
       <div class="ms-tip" id="ms-tip" hidden></div>
+    </div>
+
+    <!-- Vitamins & minerals: average over recent logged days, plus today so far -->
+    <div class="macro-split" id="micro-avg">
+      <div class="ms-head">Vitamins &amp; minerals · 7-day average</div>
+      <div class="ma-sub" id="ma-sub"></div>
+      <div id="ma-rows"></div>
+      <button type="button" class="link-btn" id="ma-toggle" style="font-size:12px;margin-top:4px;" onclick="toggleMicroAvg()"></button>
     </div>
 
     <!-- Google Health strip -->
@@ -5507,6 +5526,7 @@ function renderDiary() {
   setDiaryMacro('d-carbs', tot.carbs, t.carbs, 'carbs');
   setDiaryMacro('d-fat', tot.fat, t.fat, 'fat');
   renderMacroSplit(tot, t);
+  renderMicroAverages();
 
   renderGoogleStrip(key);
   renderHydration();
@@ -5579,6 +5599,77 @@ function renderMacroSplit(tot, t) {
   card.addEventListener('click', show);
   card.addEventListener('pointerout', (e) => { if (e.target.closest && e.target.closest('[data-tip]') && e.pointerType === 'mouse') tip.hidden = true; });
 })();
+// ── Vitamins & minerals: average daily intake over recent logged days ──
+// Micronutrients don't need to be hit every day, so the bar is the average over
+// the last 7 completed days that have food logged (empty days and today, which
+// isn't over, are left out), as % of the daily value. Today so far is shown
+// beside it. Sodium is a limit, so going over is what's flagged.
+let _microAvgAll = false;
+function dayMicroTotals(key) {
+  const day = state.diary[key]; if (!day || !day.entries || !day.entries.length) return null;
+  const tot = {};
+  day.entries.forEach(e => { if (e.micros) Object.keys(e.micros).forEach(k => { if (e.micros[k] != null) tot[k] = (tot[k] || 0) + e.micros[k] * (e.qty || 1); }); });
+  return tot;
+}
+function nutrientAverages(days, endDate) {
+  days = days || 7; endDate = endDate || new Date();
+  const sums = {}, seen = {};
+  let n = 0;
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(endDate); d.setDate(d.getDate() - i);
+    const tot = dayMicroTotals(dkey(d)); if (!tot) continue;
+    n++;
+    Object.keys(tot).forEach(k => { sums[k] = (sums[k] || 0) + tot[k]; seen[k] = true; });
+  }
+  const today = dayMicroTotals(dkey(endDate)) || {};
+  Object.keys(today).forEach(k => { seen[k] = true; });
+  return { days: n, rows: NUTRIENTS.map(nt => ({
+    nt, avg: n ? (sums[nt.key] || 0) / n : null, today: today[nt.key] || 0, hasData: !!seen[nt.key],
+    pct: n ? (sums[nt.key] || 0) / n / nt.dv : null, todayPct: (today[nt.key] || 0) / nt.dv
+  })) };
+}
+function microAvgColor(row) {
+  const p = row.pct != null ? row.pct : row.todayPct;
+  if (row.nt.limit) return p > 1 ? 'var(--warn)' : 'var(--accent)';
+  return p >= 1 ? 'var(--accent)' : p >= 0.5 ? 'var(--fat)' : 'var(--warn)';
+}
+function toggleMicroAvg() { _microAvgAll = !_microAvgAll; renderMicroAverages(); }
+function renderMicroAverages() {
+  const card = document.getElementById('micro-avg'); if (!card) return;
+  const res = nutrientAverages(7, diaryDate);
+  const isToday = dkey(diaryDate) === dkey(new Date()), dayWord = isToday ? 'today' : 'this day';
+  const rows = res.rows;
+  const any = rows.some(r => r.hasData);
+  const sub = document.getElementById('ma-sub'), list = document.getElementById('ma-rows'), tog = document.getElementById('ma-toggle');
+  if (!any) {
+    sub.textContent = '';
+    list.innerHTML = '<div class="rec-empty" style="padding:6px 0;">No vitamin &amp; mineral data yet. Foods from the database search, scanned or Claude-read labels, and Claude meal estimates carry it.</div>';
+    tog.style.display = 'none';
+    return;
+  }
+  sub.textContent = res.days
+    ? `Average of your last ${res.days} logged day${res.days === 1 ? '' : 's'} (not counting ${dayWord}), as % of the daily value. Only foods with vitamin & mineral data count.`
+    : `Your average starts once you have an earlier day logged; for now this shows ${dayWord}. Only foods with vitamin & mineral data count.`;
+  const key = r => (r.pct != null ? r.pct : r.todayPct);
+  const sodium = rows.find(r => r.nt.limit);
+  const goals = rows.filter(r => !r.nt.limit).sort((a, b) => (b.hasData - a.hasData) || (key(a) - key(b)));
+  const shown = _microAvgAll ? [sodium, ...goals] : [sodium, ...goals.filter(r => r.hasData).slice(0, 5)];
+  const fmt = (v, nt) => (v >= 100 ? Math.round(v).toLocaleString() : Math.round(v * 10) / 10) + ' ' + nt.unit;
+  list.innerHTML = `<div class="ma-head"><span></span><span></span><span>${res.days ? 'Avg' : ''}</span><span>${isToday ? 'Today' : 'Day'}</span></div>` + shown.filter(Boolean).map(r => {
+    const p = key(r);
+    if (!r.hasData) return `<div class="ma-row nodata"><span class="ma-name">${r.nt.label}</span><div class="ma-bar"></div><span class="ma-avg">no data</span><span class="ma-today"></span></div>`;
+    const title = `${r.nt.label}: ` + (r.avg != null ? `averaging ${fmt(r.avg, r.nt)} a day` : '') + (r.avg != null ? '; ' : '') + `${dayWord} ${fmt(r.today, r.nt)}; ${r.nt.limit ? 'limit' : 'daily value'} ${fmt(r.nt.dv, r.nt)}`;
+    return `<div class="ma-row" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+      <span class="ma-name">${r.nt.label}${r.nt.limit ? ' <span style="color:var(--text3);">(limit)</span>' : ''}</span>
+      <div class="ma-bar"><div class="ma-fill" style="width:${Math.min(100, Math.round(p * 100))}%;background:${microAvgColor(r)};"></div></div>
+      <span class="ma-avg">${r.pct != null ? Math.round(r.pct * 100) + '%' : ''}</span>
+      <span class="ma-today">${Math.round(r.todayPct * 100)}%</span>
+    </div>`;
+  }).join('');
+  const hidden = rows.length - shown.filter(Boolean).length;
+  tog.style.display = _microAvgAll || hidden > 0 ? '' : 'none';
+  tog.textContent = _microAvgAll ? 'Show fewer' : `Show all ${rows.length}`;
+}
 function setDiaryMacro(prefix, val, target, label) {
   document.getElementById(prefix).textContent = val;
   document.getElementById(prefix + '-target').textContent = '/ ' + target + 'g ' + label;
@@ -8020,7 +8111,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v93 · 2026-10-27';
+const APP_VERSION = 'v94 · 2026-10-27';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

@@ -1135,15 +1135,6 @@ textarea.field { resize: none; line-height: 1.45; }
 .steps-empty { text-align: center; color: var(--text3); font-size: 12px; padding: 20px 0; }
 
 /* ═══════════════ NUTRIENTS ═══════════════ */
-.nr-tier-head { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 9px; }
-.nr-tier-head:first-child { margin-top: 0; }
-.nr-tier-head span { color: var(--text3); font-weight: 400; text-transform: none; letter-spacing: 0; }
-.nutrient-row { margin-bottom: 10px; }
-.nr-top { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
-.nr-name { color: var(--text); }
-.nr-val { color: var(--text3); font-variant-numeric: tabular-nums; }
-.nr-bar { height: 6px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
-.nr-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
 .rec-nutri-head { font-size: 12px; font-weight: 600; color: var(--text); margin: 18px 2px 8px; }
 .rec-nutri { margin-bottom: 12px; }
 .rn-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
@@ -1561,8 +1552,8 @@ textarea.field { resize: none; line-height: 1.45; }
       </div>
     </div>
     <div class="steps-card" id="nutrient-card">
-      <div class="steps-title">Vitamins &amp; minerals</div>
-      <div class="steps-sub">Each nutrient is measured over its natural window — daily, a few days, or a week.</div>
+      <div class="steps-title">Vitamins &amp; minerals · 7-day average</div>
+      <div class="steps-sub" id="nutrient-sub"></div>
       <div id="nutrient-list" style="margin-top:12px;"></div>
     </div>
     <div class="steps-card" id="energy-hist-card">
@@ -5634,17 +5625,17 @@ function microAvgColor(row) {
   return p >= 1 ? 'var(--accent)' : p >= 0.5 ? 'var(--fat)' : 'var(--warn)';
 }
 function toggleMicroAvg() { _microAvgAll = !_microAvgAll; renderMicroAverages(); }
-function renderMicroAverages() {
-  const card = document.getElementById('micro-avg'); if (!card) return;
-  const res = nutrientAverages(7, diaryDate);
-  const isToday = dkey(diaryDate) === dkey(new Date()), dayWord = isToday ? 'today' : 'this day';
+// Renders the average card into `el` ({ sub, list, tog }): Today shows the
+// viewed day and a short list; Trends shows all nutrients as of today.
+function renderMicroAvgInto(el, endDate, showAll) {
+  const res = nutrientAverages(7, endDate);
+  const isToday = dkey(endDate) === dkey(new Date()), dayWord = isToday ? 'today' : 'this day';
   const rows = res.rows;
-  const any = rows.some(r => r.hasData);
-  const sub = document.getElementById('ma-sub'), list = document.getElementById('ma-rows'), tog = document.getElementById('ma-toggle');
-  if (!any) {
+  const { sub, list, tog } = el;
+  if (!rows.some(r => r.hasData)) {
     sub.textContent = '';
     list.innerHTML = '<div class="rec-empty" style="padding:6px 0;">No vitamin &amp; mineral data yet. Foods from the database search, scanned or Claude-read labels, and Claude meal estimates carry it.</div>';
-    tog.style.display = 'none';
+    if (tog) tog.style.display = 'none';
     return;
   }
   sub.textContent = res.days
@@ -5653,12 +5644,12 @@ function renderMicroAverages() {
   const key = r => (r.pct != null ? r.pct : r.todayPct);
   const sodium = rows.find(r => r.nt.limit);
   const goals = rows.filter(r => !r.nt.limit).sort((a, b) => (b.hasData - a.hasData) || (key(a) - key(b)));
-  const shown = _microAvgAll ? [sodium, ...goals] : [sodium, ...goals.filter(r => r.hasData).slice(0, 5)];
+  const shown = (showAll ? [sodium, ...goals] : [sodium, ...goals.filter(r => r.hasData).slice(0, 5)]).filter(Boolean);
   const fmt = (v, nt) => (v >= 100 ? Math.round(v).toLocaleString() : Math.round(v * 10) / 10) + ' ' + nt.unit;
-  list.innerHTML = `<div class="ma-head"><span></span><span></span><span>${res.days ? 'Avg' : ''}</span><span>${isToday ? 'Today' : 'Day'}</span></div>` + shown.filter(Boolean).map(r => {
+  list.innerHTML = `<div class="ma-head"><span></span><span></span><span>${res.days ? 'Avg' : ''}</span><span>${isToday ? 'Today' : 'Day'}</span></div>` + shown.map(r => {
     const p = key(r);
     if (!r.hasData) return `<div class="ma-row nodata"><span class="ma-name">${r.nt.label}</span><div class="ma-bar"></div><span class="ma-avg">no data</span><span class="ma-today"></span></div>`;
-    const title = `${r.nt.label}: ` + (r.avg != null ? `averaging ${fmt(r.avg, r.nt)} a day` : '') + (r.avg != null ? '; ' : '') + `${dayWord} ${fmt(r.today, r.nt)}; ${r.nt.limit ? 'limit' : 'daily value'} ${fmt(r.nt.dv, r.nt)}`;
+    const title = `${r.nt.label}: ` + (r.avg != null ? `averaging ${fmt(r.avg, r.nt)} a day; ` : '') + `${dayWord} ${fmt(r.today, r.nt)}; ${r.nt.limit ? 'limit' : 'daily value'} ${fmt(r.nt.dv, r.nt)}`;
     return `<div class="ma-row" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
       <span class="ma-name">${r.nt.label}${r.nt.limit ? ' <span style="color:var(--text3);">(limit)</span>' : ''}</span>
       <div class="ma-bar"><div class="ma-fill" style="width:${Math.min(100, Math.round(p * 100))}%;background:${microAvgColor(r)};"></div></div>
@@ -5666,9 +5657,14 @@ function renderMicroAverages() {
       <span class="ma-today">${Math.round(r.todayPct * 100)}%</span>
     </div>`;
   }).join('');
-  const hidden = rows.length - shown.filter(Boolean).length;
-  tog.style.display = _microAvgAll || hidden > 0 ? '' : 'none';
-  tog.textContent = _microAvgAll ? 'Show fewer' : `Show all ${rows.length}`;
+  if (tog) {
+    tog.style.display = showAll || rows.length > shown.length ? '' : 'none';
+    tog.textContent = showAll ? 'Show fewer' : `Show all ${rows.length}`;
+  }
+}
+function renderMicroAverages() {
+  if (!document.getElementById('micro-avg')) return;
+  renderMicroAvgInto({ sub: document.getElementById('ma-sub'), list: document.getElementById('ma-rows'), tog: document.getElementById('ma-toggle') }, diaryDate, _microAvgAll);
 }
 function setDiaryMacro(prefix, val, target, label) {
   document.getElementById(prefix).textContent = val;
@@ -7770,32 +7766,10 @@ function habitualGapsHtml() {
     </div>`;
   }).join('');
 }
-function fmtAmt(v, unit) { return (v >= 100 ? Math.round(v) : Math.round(v * 10) / 10) + ' ' + unit; }
 
 function renderNutrients() {
   const list = document.getElementById('nutrient-list'); if (!list) return;
-  const status = nutrientStatus(new Date());
-  if (!hasMicroData(status)) {
-    list.innerHTML = '<div class="rec-empty" style="padding:18px 8px;">No micronutrient data yet.<br>Log whole foods via <b>food search</b> (USDA data is built in) to track vitamins & minerals here — each is measured over its natural window.</div>';
-    return;
-  }
-  const byTier = { daily: [], few: [], week: [] };
-  status.forEach(s => byTier[s.nt.tier].push(s));
-  list.innerHTML = ['daily', 'few', 'week'].map(tier => {
-    const rows = byTier[tier].map(s => {
-      const pct = Math.min(100, Math.round(s.pct * 100));
-      // A limit (sodium) is good while under and bad when over — invert the color.
-      const color = s.nt.limit ? (s.pct > 1 ? 'var(--warn)' : 'var(--accent)') : nutrientColor(s.pct);
-      const suffix = s.nt.limit ? ' limit' : '';
-      return `<div class="nutrient-row">
-        <div class="nr-top"><span class="nr-name">${s.nt.label}</span>
-          <span class="nr-val">${fmtAmt(s.have, s.nt.unit)} / ${fmtAmt(s.need, s.nt.unit)}${suffix}</span></div>
-        <div class="nr-bar"><div class="nr-fill" style="width:${pct}%;background:${color};"></div></div>
-      </div>`;
-    }).join('');
-    const win = tier === 'daily' ? 'today' : tier === 'few' ? 'last 3 days' : 'last 7 days';
-    return `<div class="nr-tier-head">${TIER_LABEL[tier]} <span>· ${win}</span></div>${rows}`;
-  }).join('');
+  renderMicroAvgInto({ sub: document.getElementById('nutrient-sub'), list, tog: null }, new Date(), true);
 }
 
 // ── Recommendations ──────────────────────────────────────────────────────────

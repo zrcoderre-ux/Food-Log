@@ -7,6 +7,8 @@
 //           matched against the user's own foods where possible
 //   groceries — turn a receipt photo, a photo of groceries and/or a typed list
 //           into inventory items with package sizes and estimated shelf life
+//   recommend — ideas for the rest of the day from the user's remaining
+//           protein, nutrient gaps, kitchen inventory and an optional request
 //   siri  — a Siri shortcut sends what you said (and where you are); it's
 //           turned into diary items and left in plateiq_inbox for the app
 //
@@ -200,6 +202,64 @@ For a matched item, fill these from the catalog serving as best you can and leav
 
 summary: one or two sentences, naming the main assumptions. If you could not read anything, return no items and explain in summary.`;
 
+const REC_SCHEMA = {
+  type: 'object',
+  properties: {
+    ideas: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          slot: { type: 'string', enum: SLOTS },
+          title: { type: 'string' },
+          why: { type: 'string' },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                emoji: { type: 'string' },
+                match_id: { type: 'string' },
+                servings: { type: 'number' },
+                serving: { type: 'string' },
+                kcal: { type: 'number' },
+                protein: { type: 'number' },
+                carbs: { type: 'number' },
+                fat: { type: 'number' },
+                micros: MICROS_SCHEMA,
+              },
+              required: ['name', 'emoji', 'match_id', 'servings', 'serving', 'kcal', 'protein', 'carbs', 'fat', 'micros'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['slot', 'title', 'why', 'items'],
+        additionalProperties: false,
+      },
+    },
+    summary: { type: 'string' },
+  },
+  required: ['ideas', 'summary'],
+  additionalProperties: false,
+};
+
+const REC_SYSTEM = `You suggest what a person could eat for the rest of today, as concrete ideas they can log in their food diary. The request includes where their day stands (meals still ahead, remaining protein and calories, vitamin and mineral gaps, what's in their kitchen, foods they won't eat, what they ate recently) and may include a request of their own.
+
+What matters, in order:
+1. Never suggest anything on their won't-eat list, or anything that conflicts with their own request.
+2. Protein is their one macro goal: help close the remaining protein. Treat the calorie number as a soft budget, not a target to fill. Carbs and fat are not goals.
+3. Favor foods rich in the vitamins and minerals they're short on today or habitually, and keep sodium modest, especially if they're near the limit.
+4. Use what they have: prefer items in their kitchen, above all ones near or past best-by (past best-by only if it's a food that is typically still fine, like hard cheese or eggs a few days over; never suggest spoiled-risk items like raw meat past date).
+5. Prefer foods from their catalog, especially [mine] entries, and vary from what they ate the last few days.
+
+Give 2 or 3 ideas for each meal still ahead, plus 2 snack ideas (slot "Snacks"). If they named a meal or situation ("dinner", "I'm at Chipotle", "no cooking"), focus on that instead, with 3 to 5 ideas. Each idea is a practical meal or snack: one food, or a few that go together, with realistic portions. "title" is a short name for it ("Greek yogurt bowl with berries"); "why" is one sentence on what it does for them today ("32 g protein and most of your vitamin C, and uses the spinach before Friday").
+
+Items: catalog lines are "id | name | serving | kcal per serving". For a catalog food, set match_id to its id and servings to how many of its servings; still fill name, serving and per-serving kcal, protein, carbs and fat from the catalog serving (estimate protein/carbs/fat if needed) and leave micros empty. For anything else (a store item, a restaurant dish), set match_id to "", describe one serving with an approximate weight in "serving", and give per-serving nutrition and micros for the nutrients it meaningfully provides, using these keys and units:
+${NUTRIENT_TABLE}
+
+summary: one sentence on the overall approach (e.g. "Leaned on the eggs and spinach you have, since protein is 60 g short"). If nothing fits, return no ideas and say why in summary.`;
+
 type ImageIn = { media_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; data: string };
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_IMAGE_B64 = 6_500_000; // ~5 MB decoded, the API's per-image limit
@@ -255,7 +315,7 @@ Deno.serve(async (req) => {
 
   let body: {
     task?: string; image?: ImageIn; text?: string; catalog?: string; slot?: string; today?: string;
-    token?: string; lat?: number | string; lng?: number | string;
+    token?: string; lat?: number | string; lng?: number | string; context?: string;
   };
   try { body = await req.json(); } catch { return json({ error: 'Bad JSON' }, 400); }
 
@@ -310,6 +370,17 @@ Deno.serve(async (req) => {
     ];
     content = [{ type: 'text', text: `Default slot: ${siri.slot}\n\nThe person said this to Siri, so expect speech-to-text errors: ${text}` }];
     schema = MEAL_SCHEMA;
+    effort = 'medium';
+  } else if (body.task === 'recommend') {
+    const context = (body.context || '').slice(0, 30_000).trim();
+    if (!context) return json({ error: 'Missing context' }, 400);
+    const catalog = (body.catalog || '').slice(0, 400_000);
+    system = [
+      { type: 'text', text: REC_SYSTEM },
+      { type: 'text', text: 'Catalog:\n' + (catalog || '(empty)'), cache_control: { type: 'ephemeral' } },
+    ];
+    content = [{ type: 'text', text: context + (text ? `\n\nTheir request: ${text}` : '') }];
+    schema = REC_SCHEMA;
     effort = 'medium';
   } else if (body.task === 'groceries') {
     if (!img && !text) return json({ error: 'Add a receipt or grocery photo, or type a list' }, 400);

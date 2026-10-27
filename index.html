@@ -966,6 +966,14 @@ textarea.field { resize: none; line-height: 1.45; }
 .cl-controls input { width: 64px; }
 .cl-kcal { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
 .cl-total { font-size: 13px; color: var(--text2); margin: 10px 0; }
+.claude-rec { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 14px; background: var(--surface2); }
+.cr-idea { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; }
+.cr-title { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text); }
+.cr-title .cr-kcal { font-size: 12px; font-weight: 500; color: var(--text2); white-space: nowrap; }
+.cr-why { font-size: 12px; color: var(--accent-text); margin: 3px 0 6px; line-height: 1.45; }
+.cr-items { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 8px; }
+.cr-tag { font-size: 10px; font-weight: 600; border-radius: 6px; padding: 0 5px; margin-left: 3px; background: var(--accent-light); color: var(--accent-text); white-space: nowrap; }
+.cr-tag.buy { background: var(--alert-bg); color: var(--alert-text); }
 .cl-save-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text2); margin: 4px 0 10px; }
 
 .diary-meal {
@@ -2193,6 +2201,13 @@ textarea.field { resize: none; line-height: 1.45; }
       <button class="drawer-close" onclick="closeModal('recommend-modal')" aria-label="Close">✕</button>
     </div>
     <p id="recommend-sub" style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;"></p>
+    <div class="claude-rec">
+      <input type="text" id="cr-text" class="food-search" placeholder="Optional: something quick, I'm at Chipotle…" aria-label="Anything Claude should know?" autocomplete="off" style="margin:0 0 8px;" onkeydown="if(event.key==='Enter')runClaudeRec()">
+      <button class="btn-primary" id="cr-go" style="margin:0;" onclick="runClaudeRec()">✨ Ask Claude for ideas</button>
+      <div id="cr-status" class="claude-status" style="display:none;" role="status" aria-live="polite"></div>
+      <div id="cr-results"></div>
+    </div>
+    <div class="rec-nutri-head" id="rec-local-head">Quick picks from your foods</div>
     <div id="recommend-list"></div>
   </div>
 </div>
@@ -5346,8 +5361,12 @@ function fmtQty(q) { return Number.isInteger(q) ? String(q) : String(Math.round(
 // Every overlay opens and closes through these helpers: the page behind stops
 // scrolling, Escape closes the top-most sheet, and the camera is released when
 // the scanner closes.
+// Each sheet opens above whatever is already open (e.g. the quantity sheet over
+// Recommended), whatever their order in the page; Escape closes the top one.
+let _sheetZ = 200;
 function openModalById(id) {
   const el = document.getElementById(id); if (!el) return;
+  el.style.zIndex = String(++_sheetZ);
   el.classList.add('open');
   document.body.classList.add('modal-open');
 }
@@ -5355,7 +5374,7 @@ function closeModal(id) {
   const el = document.getElementById(id); if (!el) return;
   if (id === 'scanner-modal') stopScan();
   el.classList.remove('open');
-  if (!document.querySelector('.modal-overlay.open, .overlay.open')) document.body.classList.remove('modal-open');
+  if (!document.querySelector('.modal-overlay.open, .overlay.open')) { document.body.classList.remove('modal-open'); _sheetZ = 200; }
   // Settings can change the budget; refresh Today however the drawer was dismissed.
   if (id === 'settings-overlay' && document.getElementById('screen-today').classList.contains('active')) renderDiary();
 }
@@ -6216,7 +6235,7 @@ function addClaudeItems() {
   if (!n) return;
   saveState();
   slots.forEach(s => syncSlotMeal(key, s));
-  closeModal('claude-log-modal');
+  closeModal('claude-log-modal'); closeModal('recommend-modal');
   document.getElementById('cl-text').value = '';
   clearClaudeMealPhoto();
   claudeItems = [];
@@ -7588,6 +7607,7 @@ function renderNutrients() {
 // ── Recommendations ──────────────────────────────────────────────────────────
 function openRecommend() {
   logTargetSlot = defaultSlot();
+  claudeIdeas = []; document.getElementById('cr-results').innerHTML = ''; setClaudeStatus('cr-status', '', '');
   const key = dkey(diaryDate);
   const t = calcTDEE();
   const tot = diaryTotals(key);
@@ -7615,12 +7635,7 @@ function openRecommend() {
   if (pool.length < 5) pool = allFoods().filter(f => state.ratings[f.id] !== 'no');
   pool = pool.filter(f => f.kcal > 0);
 
-  // Which main meals are still ahead today? (none logged yet, and the time hasn't passed)
-  const isToday = key === dkey(new Date());
-  const hour = new Date().getHours();
-  const cutoff = { Breakfast: 11, Lunch: 16, Dinner: 23 };
-  const logged = new Set(((state.diary[key] || {}).entries || []).map(e => e.slot));
-  const upcoming = ['Breakfast', 'Lunch', 'Dinner'].filter(s => !logged.has(s) && (!isToday || hour < cutoff[s]));
+  const upcoming = upcomingMeals(key);
   const n = upcoming.length;
   // Split the day's remaining budget across the upcoming meals; snacks get a slice.
   const mealCtx = (fr) => ({ remKcal: base.remKcal * fr, needP: base.needP * fr, needC: base.needC * fr, needF: base.needF * fr, gP: base.gP, gC: base.gC, gF: base.gF, status: base.status, chronic: base.chronic });
@@ -7657,6 +7672,14 @@ function openRecommend() {
   });
   list.innerHTML = (html || '<div class="rec-empty">Rate some foods in the Foods tab to unlock personalised picks.</div>') + micronutrientRecsHtml() + habitualGapsHtml();
   openModalById('recommend-modal');
+}
+// Which main meals are still ahead on this day? (none logged yet, and the time hasn't passed)
+function upcomingMeals(key) {
+  const isToday = key === dkey(new Date());
+  const hour = new Date().getHours();
+  const cutoff = { Breakfast: 11, Lunch: 16, Dinner: 23 };
+  const logged = new Set(((state.diary[key] || {}).entries || []).map(e => e.slot));
+  return ['Breakfast', 'Lunch', 'Dinner'].filter(s => !logged.has(s) && (!isToday || hour < cutoff[s]));
 }
 function logFoodTo(id, slot) { logTargetSlot = slot; logFood(id); }
 function logMealTo(id, slot) { logTargetSlot = slot; const i = state.savedMeals.findIndex(m => m.id === id); if (i >= 0) logMeal(i); }
@@ -7753,6 +7776,108 @@ function micronutrientRecsHtml() {
     </div>`;
   }).join('');
 }
+// ── Claude recommendations ──
+// Ideas for the rest of the day from Claude, built around what's left of your
+// protein, your nutrient gaps and what's in your kitchen. Tapping one opens the
+// same review list as "Describe or snap a meal".
+let claudeIdeas = [];
+// Plain-text summary of where the day stands, sent with the request.
+function claudeRecContext() {
+  ensureDataModel();
+  const key = dkey(diaryDate), isToday = key === dkey(new Date());
+  const t = calcTDEE(), tot = diaryTotals(key), ex = exerciseCalsFor(key);
+  const L = [];
+  L.push('Day: ' + key + (isToday ? ', current time ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''));
+  const entries = (state.diary[key] || {}).entries || [];
+  MEAL_SECTIONS.forEach(slot => {
+    const es = entries.filter(e => e.slot === slot);
+    L.push(slot + ' so far: ' + (es.length ? es.map(e => fmtQty(e.qty) + ' × ' + e.name).join(', ') : 'nothing logged'));
+  });
+  const up = upcomingMeals(key);
+  L.push('Meals still ahead: ' + (up.length ? up.join(', ') : 'none (snacks only)'));
+  L.push(`Protein: ${Math.round(tot.protein)} g eaten of a ${t.protein} g target (${Math.max(0, Math.round(t.protein - tot.protein))} g to go)`);
+  L.push(`Calories: ${Math.round(tot.kcal)} eaten; about ${Math.round(t.kcal + ex - tot.kcal)} left in today's budget`);
+  const status = nutrientStatus(new Date());
+  if (hasMicroData(status)) {
+    const low = status.filter(x => !x.nt.limit && x.pct < 0.7).sort((a, b) => a.pct - b.pct).slice(0, 6);
+    if (low.length) L.push('Short on (this window): ' + low.map(x => `${x.nt.label} ${Math.round(x.pct * 100)}%`).join(', '));
+    const na = status.find(x => x.nt.key === 'sodium');
+    if (na) L.push(`Sodium so far: ${Math.round(na.have)} mg of a ${na.nt.dv} mg limit`);
+  }
+  const chronic = chronicNutrientGaps().slice(0, 5);
+  if (chronic.length) L.push('Habitually low over recent weeks: ' + chronic.map(c => `${c.nt.label} (avg ${Math.round(c.avg * 100)}%)`).join(', '));
+  const stock = state.inventory.filter(it => (+it.qty || 0) > 0)
+    .sort((a, b) => (a.bestBy || '9999').localeCompare(b.bestBy || '9999')).slice(0, 80);
+  if (stock.length) {
+    L.push('In their kitchen:');
+    stock.forEach(it => {
+      const dl = invDaysLeft(it);
+      L.push(`- ${it.name}: ${invQtyText(it)}` + (dl != null ? (dl < 0 ? `, ${-dl} day${dl === -1 ? '' : 's'} past best-by` : `, best by in ${dl} day${dl === 1 ? '' : 's'}`) : '') + (it.foodId ? ` [catalog id ${it.foodId}]` : ''));
+    });
+  } else L.push('Kitchen inventory: not tracked');
+  const wont = Object.keys(state.ratings || {}).filter(id => state.ratings[id] === 'no').map(id => getFood(id)).filter(Boolean).map(f => f.name).slice(0, 200);
+  if (wont.length) L.push("Won't eat: " + wont.join(', '));
+  const recent = new Set();
+  for (let i = 1; i <= 3; i++) { const d = new Date(diaryDate); d.setDate(d.getDate() - i); ((state.diary[dkey(d)] || {}).entries || []).forEach(e => recent.add(e.name)); }
+  if (recent.size) L.push('Ate in the last 3 days: ' + [...recent].slice(0, 40).join(', '));
+  return L.join('\n');
+}
+async function runClaudeRec() {
+  const btn = document.getElementById('cr-go'); btn.disabled = true;
+  document.getElementById('cr-results').innerHTML = '';
+  setClaudeStatus('cr-status', 'busy', 'Claude is thinking about your day…');
+  try {
+    const r = (await claudeCall({ task: 'recommend', context: claudeRecContext(), text: document.getElementById('cr-text').value.trim(), catalog: claudeCatalog() })).result;
+    claudeIdeas = (r.ideas || []).map(idea => ({
+      ...idea,
+      items: (idea.items || []).map(it => claudeResolve({ ...it, slot: idea.slot, confidence: it.match_id ? 'high' : 'medium', assumption: '' }, idea.slot))
+    })).filter(idea => idea.items.length);
+    setClaudeStatus('cr-status', '', '');
+    renderClaudeIdeas(r.summary || '');
+  } catch (e) {
+    setClaudeStatus('cr-status', 'warn', escapeHtml(e.message));
+  } finally { btn.disabled = false; }
+}
+// 🧺 = in your inventory; when you track inventory, anything else is marked "buy".
+function claudeItemTag(it) {
+  const tracked = state.inventory.some(x => (+x.qty || 0) > 0);
+  if (it.refId && state.inventory.some(x => x.foodId === it.refId && (+x.qty || 0) > 0)) return '<span class="cr-tag">🧺 have</span>';
+  return tracked ? '<span class="cr-tag buy">🛒 buy</span>' : '';
+}
+function renderClaudeIdeas(summary) {
+  const el = document.getElementById('cr-results');
+  if (!claudeIdeas.length) { el.innerHTML = `<div class="rec-empty" style="padding:10px;">${escapeHtml(summary || 'No ideas this time. Try asking differently.')}</div>`; return; }
+  let html = summary ? `<div class="cl-summary" style="margin:10px 0 6px;">${escapeHtml(summary)}</div>` : '';
+  let lastSlot = '';
+  claudeIdeas.forEach((idea, i) => {
+    if (idea.slot !== lastSlot) { html += `<div class="rec-nutri-head">${escapeHtml(idea.slot)}</div>`; lastSlot = idea.slot; }
+    const kcal = Math.round(idea.items.reduce((s, it) => s + it.kcal * it.qty, 0));
+    const prot = Math.round(idea.items.reduce((s, it) => s + it.protein * it.qty, 0));
+    const items = idea.items.map(it => `${foodIcon(it, 14)} ${escapeHtml(fmtQty(it.qty) + ' × ' + (it.serving || 'serving'))} ${escapeHtml(it.name)}${claudeItemTag(it)}`).join('<br>');
+    html += `<div class="cr-idea">
+      <div class="cr-title"><span>${escapeHtml(idea.title)}</span><span class="cr-kcal">${kcal} cal · P${prot}g</span></div>
+      <div class="cr-why">${escapeHtml(idea.why)}</div>
+      <div class="cr-items">${items}</div>
+      <button type="button" class="btn-secondary" style="margin:0;padding:8px;font-size:13px;" onclick="logClaudeIdea(${i})">Log this</button>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+function logClaudeIdea(i) {
+  const idea = claudeIdeas[i]; if (!idea) return;
+  openClaudeReview(idea.items.map(it => ({ ...it, on: true })), idea.title);
+}
+// Open the "Log with Claude" sheet straight on its review list.
+function openClaudeReview(items, summary) {
+  claudeItems = items;
+  document.getElementById('cl-summary').textContent = summary || '';
+  document.getElementById('cl-input').style.display = 'none';
+  document.getElementById('cl-review').style.display = '';
+  document.getElementById('cl-save-foods').checked = false;
+  setClaudeStatus('cl-status', '', '');
+  renderClaudeItems();
+  openModalById('claude-log-modal');
+}
 function suggestSearch(name) {
   closeModal('recommend-modal');
   openLogModal(defaultSlot());
@@ -7792,7 +7917,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v91 · 2026-10-26';
+const APP_VERSION = 'v92 · 2026-10-27';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

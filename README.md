@@ -187,6 +187,14 @@ Optional. Uses Claude (Anthropic's AI) to:
   food, or both. Claude matches items to your own foods, recipes and saved meals
   where it can, estimates the rest (portion sizes from the photo included), and
   shows a review list. Nothing is added until you tap **Add to diary**.
+- **Ideas for the rest of the day**: Today → **✨ Recommend foods** → **Ask
+  Claude for ideas** (optionally say "something quick", "I'm at Chipotle"…).
+  Claude plans around your remaining protein, the vitamins and minerals you're
+  short on today and habitually, sodium, what's in your inventory (expiring
+  items first), your won't-eat list and what you ate recently. Each idea shows
+  its calories and protein and marks items you have (🧺) or would need to buy
+  (🛒); **Log this** opens the review list. The instant picks from your own
+  foods stay below.
 
 It runs through a Supabase edge function, so your API key never ships in the
 public app. It requires Cloud sync (above) to be set up and signed in.
@@ -337,7 +345,7 @@ findings of the last full review and what was deferred.
 | `supabase-schema.sql` | One-time SQL for cloud sync, step ingestion + push |
 | `supabase-push-cron.sql` | Schedules the energy-reminder sender (pg_cron) |
 | `supabase/functions/push-energy/` | Edge function that sends Web Push reminders (energy check-ins, morning inventory summary) |
-| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading, meal logging, grocery reading and Siri logging |
+| `supabase/functions/claude-food/` | Edge function that calls Claude for label reading, meal logging, grocery reading, recommendations and Siri logging |
 | `icon.svg`, `icon-192.png`, `icon-512.png` | App icons |
 | `tools/smoke.js`, `package.json` | Headless smoke test (`npm test`) |
 | `.github/workflows/` | GitHub Pages deploy and the CI smoke test |

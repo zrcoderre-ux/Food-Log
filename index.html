@@ -46,6 +46,8 @@
   --alert-bg: #FFF4E5;
   --alert-border: #F5C77E;
   --alert-text: #8A5A00;
+  /* Macro colors for charts and bars (validated for colorblind separation) */
+  --m-protein: #2A9D68; --m-carbs: #5C6BC0; --m-fat: #E6920A;
   --overlay: rgba(26,23,20,0.5);
   --toast-bg: #1A1714;
   --toast-text: #FFFFFF;
@@ -68,6 +70,7 @@
     --carb: #94A0E8; --carb-light: #262B46; --fat: #F2AE45; --fat-light: #3B2E15;
     --water: #5CB9EA; --water-bg: #1B2E39; --water-border: #2A4A5C; --water-text: #9AD4F3;
     --alert-bg: #3A2D14; --alert-border: #6B5424; --alert-text: #F3D08A;
+    --m-protein: #45A276; --m-carbs: #7E8AD9; --m-fat: #CB7F1E;
     --overlay: rgba(0,0,0,0.62); --toast-bg: #ECEAE4; --toast-text: #1A1714;
     --shadow: 0 1px 3px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.35);
   }
@@ -81,6 +84,7 @@
   --carb: #94A0E8; --carb-light: #262B46; --fat: #F2AE45; --fat-light: #3B2E15;
   --water: #5CB9EA; --water-bg: #1B2E39; --water-border: #2A4A5C; --water-text: #9AD4F3;
   --alert-bg: #3A2D14; --alert-border: #6B5424; --alert-text: #F3D08A;
+    --m-protein: #45A276; --m-carbs: #7E8AD9; --m-fat: #CB7F1E;
   --overlay: rgba(0,0,0,0.62); --toast-bg: #ECEAE4; --toast-text: #1A1714;
   --shadow: 0 1px 3px rgba(0,0,0,0.5), 0 4px 14px rgba(0,0,0,0.35);
 }
@@ -558,10 +562,28 @@ textarea.field { resize: none; line-height: 1.45; }
 .mc-target { font-size: 10px; color: var(--text3); }
 .mc-bar { height: 4px; border-radius: 2px; margin-top: 6px; background: var(--surface2); }
 .mc-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
-.mc-fill.protein { background: var(--accent); }
-.mc-fill.carbs { background: var(--carb); }
-.mc-fill.fat { background: var(--fat); }
+.mc-fill.protein { background: var(--m-protein); }
+.mc-fill.carbs { background: var(--m-carbs); }
+.mc-fill.fat { background: var(--m-fat); }
 
+.macro-split { margin: 0 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; position: relative; }
+.ms-head { font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text3); margin-bottom: 8px; }
+.ms-body { display: flex; align-items: center; gap: 14px; }
+.ms-donuts { display: flex; gap: 10px; flex-shrink: 0; }
+.ms-donut { text-align: center; }
+.ms-donut svg { display: block; width: 84px; height: 84px; }
+.ms-donut path { cursor: pointer; }
+.ms-donut-label { font-size: 11px; color: var(--text2); margin-top: 4px; }
+.ms-center { font-size: 11px; fill: var(--text2); }
+.ms-table { flex: 1; min-width: 0; border-collapse: collapse; font-size: 12px; }
+.ms-table th { font-size: 10px; font-weight: 600; color: var(--text3); text-align: right; padding: 0 0 4px 6px; }
+.ms-table th:first-child { text-align: left; padding-left: 0; }
+.ms-table td { padding: 3px 0 3px 6px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.ms-table td:first-child { text-align: left; padding-left: 0; color: var(--text2); white-space: nowrap; }
+.ms-table td.ms-goal { color: var(--text3); }
+.ms-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.ms-tip { position: absolute; pointer-events: none; background: var(--toast-bg); color: var(--toast-text); font-size: 11px; line-height: 1.4; padding: 5px 8px; border-radius: 6px; white-space: nowrap; z-index: 5; box-shadow: var(--shadow); }
+@media (max-width: 340px) { .ms-body { flex-direction: column; align-items: stretch; } .ms-donuts { justify-content: center; } }
 .meal-name-row { display: flex; gap: 8px; align-items: center; }
 .meal-name-input {
   flex: 1;
@@ -1228,6 +1250,22 @@ textarea.field { resize: none; line-height: 1.45; }
         <div class="mc-target" id="d-fat-target">/ — fat</div>
         <div class="mc-bar"><div class="mc-fill fat" id="d-fat-bar" style="width:0%"></div></div>
       </div>
+    </div>
+
+    <!-- Macro split: share of calories from each macro, eaten vs goal -->
+    <div class="macro-split" id="macro-split">
+      <div class="ms-head">Macro split · % of calories</div>
+      <div class="ms-body">
+        <div class="ms-donuts">
+          <div class="ms-donut"><div id="ms-eaten"></div><div class="ms-donut-label">Eaten</div></div>
+          <div class="ms-donut"><div id="ms-goal"></div><div class="ms-donut-label">Goal</div></div>
+        </div>
+        <table class="ms-table" aria-label="Macro split, eaten versus goal">
+          <thead><tr><th scope="col"></th><th scope="col">Eaten</th><th scope="col">Goal</th></tr></thead>
+          <tbody id="ms-rows"></tbody>
+        </table>
+      </div>
+      <div class="ms-tip" id="ms-tip" hidden></div>
     </div>
 
     <!-- Google Health strip -->
@@ -5468,6 +5506,7 @@ function renderDiary() {
   setDiaryMacro('d-protein', tot.protein, t.protein, 'protein');
   setDiaryMacro('d-carbs', tot.carbs, t.carbs, 'carbs');
   setDiaryMacro('d-fat', tot.fat, t.fat, 'fat');
+  renderMacroSplit(tot, t);
 
   renderGoogleStrip(key);
   renderHydration();
@@ -5476,6 +5515,70 @@ function renderDiary() {
   renderEnergyCard();
   renderDiaryMeals(key);
 }
+// ── Macro split: share of calories from protein / carbs / fat, eaten vs goal ──
+const MACRO_KCAL = [['protein', 'Protein', 4], ['carbs', 'Carbs', 4], ['fat', 'Fat', 9]];
+function macroShares(g) {
+  const rows = MACRO_KCAL.map(([key, label, perG]) => { const grams = Math.max(0, +g[key] || 0); return { key, label, grams, kcal: grams * perG }; });
+  const sum = rows.reduce((s, r) => s + r.kcal, 0);
+  rows.forEach(r => { r.pct = sum ? r.kcal / sum : 0; r.whole = Math.floor(r.pct * 100); });
+  // Round so the three shown percentages add up to exactly 100 (largest remainder).
+  if (sum) {
+    let left = 100 - rows.reduce((s, r) => s + r.whole, 0);
+    rows.slice().sort((a, b) => (b.pct * 100 - b.whole) - (a.pct * 100 - a.whole)).forEach(r => { if (left > 0) { r.whole++; left--; } });
+  }
+  return { rows, sum };
+}
+function pctText(row) { return row.whole + '%'; }
+// A donut of the three shares: 12px ring, 2px surface gap between slices.
+function macroDonutSvg(sh, centerKcal, name) {
+  const C = 42, R = 38, r = 26;
+  const center = `<text x="${C}" y="${C - 1}" text-anchor="middle" class="ms-center" style="font-weight:600;fill:var(--text);">${centerKcal != null ? Math.round(centerKcal).toLocaleString() : '—'}</text>` +
+    `<text x="${C}" y="${C + 11}" text-anchor="middle" class="ms-center">cal</text>`;
+  if (!sh.sum) return `<svg viewBox="0 0 84 84" role="img" aria-label="${name}: nothing logged yet"><circle cx="${C}" cy="${C}" r="${(R + r) / 2}" fill="none" stroke="var(--surface2)" stroke-width="${R - r}"/>${center}</svg>`;
+  const pt = (rad, a) => (C + rad * Math.cos(a)).toFixed(2) + ' ' + (C + rad * Math.sin(a)).toFixed(2);
+  let a0 = -Math.PI / 2, paths = '';
+  sh.rows.forEach(row => {
+    if (row.pct <= 0) return;
+    const tip = `${row.label} · ${pctText(row)} · ${Math.round(row.grams)} g`;
+    const attrs = `fill="var(--m-${row.key})" stroke="var(--surface)" stroke-width="2" data-tip="${name}: ${tip}"`;
+    if (row.pct > 0.9999) {
+      paths += `<path ${attrs} fill-rule="evenodd" d="M ${C - R} ${C} a ${R} ${R} 0 1 0 ${2 * R} 0 a ${R} ${R} 0 1 0 ${-2 * R} 0 Z M ${C - r} ${C} a ${r} ${r} 0 1 1 ${2 * r} 0 a ${r} ${r} 0 1 1 ${-2 * r} 0 Z"/>`;
+      return;
+    }
+    const a1 = a0 + row.pct * 2 * Math.PI, big = a1 - a0 > Math.PI ? 1 : 0;
+    paths += `<path ${attrs} d="M ${pt(R, a0)} A ${R} ${R} 0 ${big} 1 ${pt(R, a1)} L ${pt(r, a1)} A ${r} ${r} 0 ${big} 0 ${pt(r, a0)} Z"/>`;
+    a0 = a1;
+  });
+  const label = name + ': ' + sh.rows.map(x => `${x.label} ${pctText(x)}`).join(', ');
+  return `<svg viewBox="0 0 84 84" role="img" aria-label="${label}">${paths}${center}</svg>`;
+}
+function renderMacroSplit(tot, t) {
+  const eaten = macroShares(tot), goal = macroShares(t);
+  document.getElementById('ms-eaten').innerHTML = macroDonutSvg(eaten, tot.kcal, 'Eaten');
+  document.getElementById('ms-goal').innerHTML = macroDonutSvg(goal, t.kcal, 'Goal');
+  document.getElementById('ms-rows').innerHTML = eaten.rows.map((row, i) => `<tr>
+      <td><span class="ms-swatch" style="background:var(--m-${row.key});"></span>${row.label}</td>
+      <td>${eaten.sum ? pctText(row) : '—'}</td>
+      <td class="ms-goal">${goal.sum ? pctText(goal.rows[i]) : '—'}</td></tr>`).join('');
+}
+// Hover (or tap) a slice for its share and grams.
+(function initMacroSplitTips() {
+  const card = document.getElementById('macro-split'), tip = document.getElementById('ms-tip');
+  if (!card || !tip) return;
+  let hideT = null;
+  const show = (e) => {
+    const el = e.target.closest && e.target.closest('[data-tip]'); if (!el) return;
+    clearTimeout(hideT);
+    tip.textContent = el.getAttribute('data-tip'); tip.hidden = false;
+    const cr = card.getBoundingClientRect(), x = (e.clientX || cr.left) - cr.left, y = (e.clientY || cr.top) - cr.top;
+    tip.style.left = Math.max(6, Math.min(cr.width - tip.offsetWidth - 6, x - tip.offsetWidth / 2)) + 'px';
+    tip.style.top = Math.max(4, y - tip.offsetHeight - 10) + 'px';
+    if (e.type === 'click') hideT = setTimeout(() => { tip.hidden = true; }, 2500);
+  };
+  card.addEventListener('pointermove', show);
+  card.addEventListener('click', show);
+  card.addEventListener('pointerout', (e) => { if (e.target.closest && e.target.closest('[data-tip]') && e.pointerType === 'mouse') tip.hidden = true; });
+})();
 function setDiaryMacro(prefix, val, target, label) {
   document.getElementById(prefix).textContent = val;
   document.getElementById(prefix + '-target').textContent = '/ ' + target + 'g ' + label;
@@ -7917,7 +8020,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v92 · 2026-10-27';
+const APP_VERSION = 'v93 · 2026-10-27';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');

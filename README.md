@@ -9,7 +9,8 @@ JSON backup. Light and dark themes.
 ## Features
 
 - **Today / Diary** — MyFitnessPal-style daily log. Calorie budget ring
-  (`Goal − Food + Exercise = Remaining`), protein/carb/fat progress, and
+  (`Goal − Food + Exercise = Remaining`), protein/carb/fat progress, a macro
+  split (share of calories from protein, carbs and fat, eaten vs goal), and
   Breakfast / Lunch / Dinner / Snacks sections. Navigate any day.
 - **Barcode scanning** — uses the browser `BarcodeDetector` API + camera, with a
   manual-entry fallback. Products are looked up via the free

@@ -45,8 +45,8 @@ Done on the Supabase side:
 ## Working with this user
 
 - They follow along on an iPhone; give short, concrete steps with links.
-- Pattern so far: build on a branch, test, push the branch, ask "merge to
-  main?", and merge only on a yes (`main` auto-deploys to Pages).
+- Build on a branch and test; when it's done, merge to `main` and push without
+  asking (standing instruction, see `CLAUDE.md`).
 - Bump the version in `index.html` (`APP_VERSION`), `sw.js` (`VERSION`) and
   `package.json` with each shipped change. `npm test` runs the smoke test.
 - The per-feature browser tests from the last session (inventory, Siri,

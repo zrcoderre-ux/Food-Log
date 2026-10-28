@@ -55,6 +55,7 @@
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
   --tab-h: 62px;
+  --dock-h: 65px; /* .log-dock: 48px buttons + 16px padding + 1px border */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   color-scheme: light;
@@ -961,16 +962,25 @@ textarea.field { resize: none; line-height: 1.45; }
 .hydro-total { padding: 2px 6px; border-radius: 6px; }
 .hydro-total:active { background: var(--surface2); }
 .inv-alert { display: block; width: 100%; text-align: left; margin: 0 16px 12px; width: calc(100% - 32px); background: var(--alert-bg); border: 1px solid var(--alert-border); color: var(--alert-text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; line-height: 1.5; }
-.diary-actions { display: flex; gap: 10px; padding: 0 16px 14px; }
-.diary-action {
-  flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 11px 8px; font-size: 13px; font-weight: 500;
-  color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-  transition: background 0.15s;
+/* Log dock (Today): fixed just above the tab bar. It sits inside #screen-today, so it hides with the screen. */
+.log-dock {
+  position: fixed; left: 0; right: 0; bottom: calc(var(--tab-h) + var(--safe-bottom));
+  max-width: 430px; margin: 0 auto; z-index: 55;
+  display: flex; gap: 8px; padding: 8px 12px;
+  background: var(--surface); border-top: 1px solid var(--border);
 }
-.diary-action:active { background: var(--surface2); }
-.diary-action .da-ic { font-size: 15px; }
-.diary-action.claude-action { flex: none; width: 100%; color: var(--accent-text); background: var(--accent-light); border-color: transparent; }
+.dock-btn {
+  flex: 1; min-width: 0; height: 48px; border-radius: var(--radius-sm);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-size: 11px; font-weight: 600; color: var(--text2);
+  background: var(--surface2); border: 1px solid var(--border);
+}
+.dock-btn .da-ic { font-size: 17px; line-height: 1; }
+.dock-btn:active { background: var(--border); }
+.dock-btn.dock-main { flex: 1.8; flex-direction: row; gap: 8px; font-size: 15px; color: var(--accent-text); background: var(--accent-light); border-color: transparent; }
+#screen-today { padding-bottom: calc(24px + var(--dock-h)); }
+body:has(#screen-today.active) .toast { bottom: calc(var(--tab-h) + var(--dock-h) + var(--safe-bottom) + 14px); }
+body:has(#screen-today.active) .action-toast { bottom: calc(var(--tab-h) + var(--dock-h) + var(--safe-bottom) + 14px); }
 
 /* Claude assistant (label reading + describe/photo logging) */
 .claude-status { font-size: 12px; line-height: 1.5; border-radius: var(--radius-sm); padding: 9px 12px; margin: 8px 0; background: var(--surface2); color: var(--text2); }
@@ -1304,19 +1314,18 @@ textarea.field { resize: none; line-height: 1.45; }
 
     <button id="inv-today-alert" class="inv-alert" onclick="switchTab('foods');showView('inventory');" hidden></button>
 
-    <!-- Quick actions -->
-    <div class="diary-actions" style="padding-bottom:10px;">
-      <button class="diary-action claude-action" onclick="openClaudeLog()"><span class="da-ic">💬</span>Describe or snap a meal (Claude)</button>
-    </div>
-    <div class="diary-actions">
-      <button class="diary-action" onclick="openScanner()"><span class="da-ic">📷</span>Scan barcode</button>
-      <button class="diary-action" onclick="openRecommend()"><span class="da-ic">✨</span>Recommend foods</button>
-    </div>
-
     <!-- Meal sections -->
     <div id="diary-meals"></div>
 
     <div style="height:24px;"></div>
+  </div>
+
+  <!-- Log dock: fixed above the tab bar so logging is always in thumb reach -->
+  <div class="log-dock" role="toolbar" aria-label="Log food">
+    <button class="dock-btn dock-main" onclick="openClaudeLog()"><span class="da-ic">💬</span>Log a meal</button>
+    <button class="dock-btn" onclick="openLogModal()"><span class="da-ic">🔍</span>Search</button>
+    <button class="dock-btn" onclick="openScanner()"><span class="da-ic">📷</span>Scan</button>
+    <button class="dock-btn" onclick="openRecommend()"><span class="da-ic">✨</span>Ideas</button>
   </div>
 </div>
 
@@ -8085,7 +8094,7 @@ function recWhy(f, ctx) {
 
 
 // ── PWA service worker ───────────────────────────────────────────────────────
-const APP_VERSION = 'v94 · 2026-10-27';
+const APP_VERSION = 'v95 · 2026-10-28';
 function checkForUpdate() {
   if (!('serviceWorker' in navigator)) { toast('Updates not supported here'); return; }
   toast('Checking for updates…');
